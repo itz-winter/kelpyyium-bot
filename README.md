@@ -27,35 +27,34 @@ Before building and running the bot, ensure you have the following installed:
 Follow these steps to build the project:
 
 1. **Clone the Repository**
-   - Clone the repository to your local machine:
      ```powershell
      git clone <repository-url>
-     cd kelpyyium
+     cd <repository-directory>
      ```
 
 2. **Install Dependencies**
    - Maven will automatically download and install the required dependencies during the build process.
 
 3. **Build the Project**
-   - Run the following command to build the project and create a fat JAR:
      ```powershell
-     mvn clean package
+     mvn clean compile package
      ```
-   - The output JAR file will be located in the `target` directory, named something like `discord-server-bot-1.0.0.jar`.
+   - The output JAR file will be located in the `target` directory, named something like `kelpyyium-1.0.0.jar`.
 
 ## Running the Bot
 
-1. **Navigate to the Target Directory**
-   - Change to the `target` directory:
-     ```powershell
-     cd target
+1. **Copy the compiled JAR file out of the `target` directory**.
+2. **Run the bot using the following command:**
+     ```batch
+     @echo off
+     java -Xmx2G -Xms1G -jar kelpyyium-1.0.0.jar nogui
+     pause
      ```
+       - This command allocates a maximum of 2GB of RAM and a minimum of 1GB to the bot. Adjust these values as needed based on your system's resources.
 
-2. **Run the JAR File**
-   - Execute the JAR file using the following command:
-     ```powershell
-     java -jar kelpyyium-1.0.0.jar
-     ```
+3. **Ensure the bot is running and connected to Discord**. You should see log messages indicating that the bot has started successfully.
+
+## __Running the bot for the first time will generate the necessary configuration files and directories if they do not already exist.__
 
 ## Configuration
 
@@ -72,11 +71,3 @@ Follow these steps to build the project:
 - **Utility Commands**: Offers various helpful commands for server management.
 - **Reply Handling**: Relayed replies include clickable jump links to the original message.
 - **Cross-Server Message Deletion**: Deletes relayed copies when a message is deleted in one server.
-
-## Contributing
-
-Contributions are welcome! Feel free to submit issues or pull requests to improve the bot.
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
