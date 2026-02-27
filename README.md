@@ -45,12 +45,12 @@ Follow these steps to build the project:
 
 1. **Copy the compiled JAR file out of the `target` directory**.
 2. **Run the bot using the following command:**
-     ```batch
-     @echo off
-     java -Xmx2G -Xms1G -jar kelpyyium-1.0.0.jar nogui
-     pause
-     ```
-- This command allocates a maximum of 2GB of RAM and a minimum of 1GB to the bot. Adjust these values as needed based on your system's resources.
+      ```batch
+      @echo off
+      java -Xmx2G -Xms1G -jar kelpyyium-1.0.0.jar nogui
+      pause
+      ```
+   - This command allocates a maximum of 2GB of RAM and a minimum of 1GB to the bot. Adjust these values as needed based on your system's resources.
 
 3. **Ensure the bot is running and connected to Discord**. You should see log messages indicating that the bot has started successfully.
 
