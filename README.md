@@ -2,6 +2,8 @@
 
 Kelpyyium is a Java-based Discord bot built using the JDA (Java Discord API). This bot provides various features such as global chat relay, moderation tools, and utility commands.
 
+### [Official Website, Guide, Documentation, and more!](https://kelpyyium.pages.dev/)
+
 ## Prerequisites
 
 Before building and running the bot, ensure you have the following installed:
