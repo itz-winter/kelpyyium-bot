@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commands — Kelpyyium</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        .page-header {
+            text-align: center;
+            padding: 40px 20px 20px;
+            animation: fadeIn 0.4s ease;
+        }
+        .page-header h1 { color: #ffffff; font-size: 36px; }
+        .page-header p { color: #b0a0cc; font-size: 16px; }
+        .back { padding: 0 20px; max-width: 960px; margin: 0 auto; }
+        .back a { display: inline; color: #9080b0; font-size: 14px; }
+
+        .category-section {
+            max-width: 960px;
+            margin: 24px auto;
+            padding: 0 20px;
+            animation: fadeIn 0.4s ease;
+        }
+        .category-title {
+            color: #ffffff;
+            font-size: 22px;
+            text-align: left;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #1a0a3e;
+        }
+
+        /* Command row */
+        .cmd-row {
+            background: #ffffff;
+            border: 1px solid #d0d0d0;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            overflow: hidden;
+            transition: box-shadow 0.2s ease;
+        }
+        .cmd-row:hover {
+            box-shadow: 0 2px 12px rgba(11, 0, 34, 0.1);
+        }
+        .cmd-summary {
+            display: grid;
+            grid-template-columns: minmax(200px, 1fr) 2fr auto;
+            align-items: center;
+            padding: 12px 16px;
+            cursor: pointer;
+            gap: 12px;
+            user-select: none;
+        }
+        .cmd-summary:hover {
+            background: #f8f6fc;
+        }
+        .cmd-name {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-weight: bold;
+            color: #0b0022;
+            font-size: 15px;
+        }
+        .cmd-desc {
+            color: #444;
+            font-size: 14px;
+        }
+        .cmd-perm {
+            font-size: 12px;
+            color: #888;
+            font-family: monospace;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .cmd-expand-icon {
+            display: inline-block;
+            transition: transform 0.2s ease;
+            color: #999;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        .cmd-row.open .cmd-expand-icon {
+            transform: rotate(90deg);
+        }
+
+        /* Expandable detail panel */
+        .cmd-detail {
+            display: none;
+            padding: 0 20px 20px 20px;
+            border-top: 1px solid #e8e4f0;
+            background: #faf8ff;
+            animation: fadeIn 0.2s ease;
+        }
+        .cmd-row.open .cmd-detail {
+            display: block;
+        }
+        .cmd-detail h4 {
+            font-size: 14px;
+            color: #0b0022;
+            margin: 16px 0 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .cmd-detail p, .cmd-detail li {
+            font-size: 14px;
+            color: #333;
+            line-height: 1.6;
+        }
+        .cmd-detail ul {
+            margin: 4px 0;
+            padding-left: 20px;
+        }
+        .cmd-detail code {
+            background: #eee8f5;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+        .syntax-block {
+            background: #0b0022;
+            color: #c0b0e0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            margin: 8px 0;
+            overflow-x: auto;
+        }
+        .syntax-block .required { color: #ff9090; }
+        .syntax-block .optional { color: #80c0ff; }
+        .example-block {
+            background: #f0ecfa;
+            border-left: 4px solid #0b0022;
+            padding: 10px 14px;
+            border-radius: 0 8px 8px 0;
+            margin: 6px 0;
+            font-size: 14px;
+        }
+        .example-block code {
+            background: transparent;
+            padding: 0;
+            color: #0b0022;
+            font-weight: bold;
+        }
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+        }
+        .param-table th {
+            background: #0b0022;
+            color: #fff;
+            text-align: left;
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+        .param-table td {
+            padding: 7px 12px;
+            border-bottom: 1px solid #e8e4f0;
+            font-size: 13px;
+            vertical-align: top;
+        }
+        .param-table tr:last-child td { border-bottom: none; }
+        .param-required {
+            color: #cc0000;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        .param-optional {
+            color: #4488cc;
+            font-size: 11px;
+        }
+        .cmd-screenshot {
+            margin: 12px 0;
+            border-radius: 8px;
+            border: 1px solid #d0d0d0;
+            max-width: 100%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .screenshot-caption {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+            font-style: italic;
+        }
+        .note-box {
+            background: #fff8e8;
+            border-left: 4px solid #e8a820;
+            padding: 10px 14px;
+            border-radius: 0 8px 8px 0;
+            margin: 8px 0;
+            font-size: 13px;
+            color: #6a5000;
+        }
+
+        /* Search */
+        .search-box {
+            max-width: 960px;
+            margin: 0 auto 20px;
+            padding: 0 20px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 1px solid #6f6f6f;
+            border-radius: 10px;
+            font-family: Calibri, sans-serif;
+            box-sizing: border-box;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: #0b0022;
+            box-shadow: 0 0 0 3px rgba(11, 0, 34, 0.1);
+        }
+
+        /* Legend */
+        .legend {
+            max-width: 960px;
+            margin: 0 auto 12px;
+            padding: 0 20px;
+            font-size: 13px;
+            color: #b0a0cc;
+        }
+        .legend span { margin-right: 16px; }
+        .legend .req-dot { color: #ff9090; font-weight: bold; }
+        .legend .opt-dot { color: #80c0ff; font-weight: bold; }
+
+        /* Category jump nav */
+        .cat-nav {
+            max-width: 960px;
+            margin: 0 auto 20px;
+            padding: 0 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .cat-nav a {
+            display: inline-block;
+            background: #1a0a3e;
+            color: #c0b0e0;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            border: 1px solid #2a1a5e;
+            transition: all 0.2s ease;
+        }
+        .cat-nav a:hover {
+            background: #0b0022;
+            color: #fff;
+            transform: translateY(-1px);
+        }
+
+        .no-results {
+            text-align: center;
+            color: #888;
+            padding: 40px 20px;
+            display: none;
+            font-size: 16px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6f6f6f;
+            font-size: 13px;
+        }
+        .footer a { display: inline; color: #9080b0; font-size: 13px; }
+
+        @media (max-width: 700px) {
+            .cmd-summary {
+                grid-template-columns: 1fr;
+                gap: 4px;
+            }
+            .cmd-perm { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="back">
+        <a href="index.html">&larr; Back to Home</a>
+    </div>
+
+    <div class="page-header">
+        <h1>Command Reference</h1>
+        <p>All commands use Discord slash command syntax. Click any command to see full details, usage examples, and screenshots.</p>
+    </div>
+
+    <div class="search-box">
+        <input type="text" id="cmdSearch" placeholder="Search commands..." oninput="filterCommands()">
+    </div>
+
+    <div class="legend">
+        <span><span class="req-dot">&lt;required&gt;</span> = must be provided</span>
+        <span><span class="opt-dot">[optional]</span> = can be omitted</span>
+    </div>
+
+    <div class="cat-nav">
+        <a href="#cat-moderation">Moderation</a>
+        <a href="#cat-economy">Economy</a>
+        <a href="#cat-leveling">Leveling</a>
+        <a href="#cat-games">Games</a>
+        <a href="#cat-configuration">Configuration</a>
+        <a href="#cat-proxy">Proxy System</a>
+        <a href="#cat-tickets">Tickets</a>
+        <a href="#cat-globalchat">Global Chat</a>
+        <a href="#cat-utility">Utility</a>
+        <a href="#cat-owner">Owner Only</a>
+    </div>
+
+    <div id="no-results" class="no-results">No commands found matching your search.</div>
+
+    <!-- ============================================================ -->
+    <!-- MODERATION -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-moderation" data-category="moderation">
+        <h2 class="category-title">Moderation</h2>
+
+        <!-- /ban -->
+        <div class="cmd-row" data-cmd="ban">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/ban<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Ban a user from the server (permanent or timed)</span>
+                <span class="cmd-perm">mod.ban</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/ban <span class="required">&lt;user&gt;</span> <span class="optional">[duration]</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to ban</td></tr>
+                    <tr><td><code>duration</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Duration of the ban. Omit for permanent. Formats: <code>1d</code>, <code>2h</code>, <code>30m</code>, <code>1w</code>, <code>12h30m</code></td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for the ban (logged in mod history). Defaults to "No reason provided"</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/ban @John 7d Repeated rule violations</code> — Bans John for 7 days</div>
+                <div class="example-block"><code>/ban @Spammer</code> — Permanently bans a user with no reason</div>
+                <div class="example-block"><code>/ban @User 2h30m Cooling off</code> — Bans for 2 hours and 30 minutes</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Deletes the user's messages from the last 7 days when banning.</li>
+                    <li>If a duration is specified, the bot will automatically unban the user after the time expires.</li>
+                    <li>A DM notification is sent to the user (if <code>/punishment-dm</code> is enabled), including the reason, duration, and an appeal button.</li>
+                    <li>The action is logged to the mod history, accessible via <code>/hist</code>.</li>
+                    <li>Role hierarchy is enforced — you can only ban users with roles below yours.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/ban-example.png" alt="Ban command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /ban command in action</p>
+            </div>
+        </div>
+
+        <!-- /unban -->
+        <div class="cmd-row" data-cmd="unban">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/unban<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Unban a user from the server</span>
+                <span class="cmd-perm">mod.unban</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/unban <span class="required">&lt;user&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to unban</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for unbanning</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/unban @John Appeal approved</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Removes the user from the server's ban list, allowing them to rejoin.</li>
+                    <li>The action is logged in moderation history.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/unban-example.png" alt="Unban command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /unban command</p>
+            </div>
+        </div>
+
+        <!-- /kick -->
+        <div class="cmd-row" data-cmd="kick">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/kick<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Kick a user from the server</span>
+                <span class="cmd-perm">mod.kick</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/kick <span class="required">&lt;user&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to kick</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for the kick. Defaults to "No reason provided"</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/kick @John Breaking server rules</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>The user is removed from the server but can rejoin with a new invite link.</li>
+                    <li>A DM notification is sent to the user if punishment DMs are enabled.</li>
+                    <li>Role hierarchy is enforced.</li>
+                    <li>Logged in moderation history and AutoLog channel.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/kick-example.png" alt="Kick command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /kick command</p>
+            </div>
+        </div>
+
+        <!-- /softban -->
+        <div class="cmd-row" data-cmd="softban">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/softban<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Softban a user (ban then immediately unban to delete their messages)</span>
+                <span class="cmd-perm">mod.softban</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/softban <span class="required">&lt;user&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to softban</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for the softban</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/softban @Spammer Cleaning up spam messages</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Bans the user (deleting their last 7 days of messages) and immediately unbans them.</li>
+                    <li>Effectively a "kick + message purge" — the user is removed and can rejoin, but their messages are cleaned up.</li>
+                    <li>Useful for dealing with spam raids or nuking a user's message history.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/softban-example.png" alt="Softban command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /softban command</p>
+            </div>
+        </div>
+
+        <!-- /warn -->
+        <div class="cmd-row" data-cmd="warn">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/warn<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Warn a user (adds to their warning count)</span>
+                <span class="cmd-perm">mod.warn</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/warn <span class="required">&lt;user&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to warn</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for the warning. Defaults to "No reason provided"</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/warn @John Please follow the rules</code></div>
+                <div class="example-block"><code>/warn @User Spamming in chat</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Adds a warning to the user's record. The total warning count is displayed in the response.</li>
+                    <li>Warnings are stored per-server and can be viewed with <code>/warns</code>.</li>
+                    <li>A DM notification is sent to the warned user if punishment DMs are enabled.</li>
+                    <li>Cannot warn bots. Role hierarchy is enforced.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/warn-example.png" alt="Warn command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /warn command</p>
+            </div>
+        </div>
+
+        <!-- /unwarn -->
+        <div class="cmd-row" data-cmd="unwarn">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/unwarn<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Remove the most recent warning from a user</span>
+                <span class="cmd-perm">mod.unwarn</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/unwarn <span class="required">&lt;user&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to remove a warning from</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for removing the warning</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/unwarn @John Warning was unjustified</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Removes the <strong>most recent</strong> warning from the user's record.</li>
+                    <li>Shows the removed warning's original reason and remaining warning count.</li>
+                    <li>Logged to moderation history and AutoLog channel.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/unwarn-example.png" alt="Unwarn command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /unwarn command</p>
+            </div>
+        </div>
+
+        <!-- /warns -->
+        <div class="cmd-row" data-cmd="warns">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/warns<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">View a user's active warnings</span>
+                <span class="cmd-perm">mod.warn</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/warns <span class="optional">[user]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-optional">No</span></td><td>User to check warnings for. Defaults to yourself</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/warns @John</code> — View John's warnings</div>
+                <div class="example-block"><code>/warns</code> — View your own warnings</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Displays each warning with the reason, moderator who issued it, and timestamp.</li>
+                    <li>Shows total warning count.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/warns-example.png" alt="Warns command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /warns command output</p>
+            </div>
+        </div>
+
+        <!-- /mute -->
+        <div class="cmd-row" data-cmd="mute">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/mute<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Mute a user (role-based mute with optional duration)</span>
+                <span class="cmd-perm">mod.mute</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/mute <span class="required">&lt;user&gt;</span> <span class="optional">[duration]</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to mute</td></tr>
+                    <tr><td><code>duration</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Duration of mute (e.g., <code>1h</code>, <code>30m</code>, <code>2d</code>). Omit for permanent</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for the mute</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/mute @John 1h Inappropriate language</code></div>
+                <div class="example-block"><code>/mute @User 30m</code> — 30 minute mute with no reason</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Applies a mute role that removes speaking permissions.</li>
+                    <li>Timed mutes are automatically reversed when the duration expires.</li>
+                    <li>DM notification sent if punishment DMs are configured.</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- /unmute -->
+        <div class="cmd-row" data-cmd="unmute">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/unmute<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Unmute a user</span>
+                <span class="cmd-perm">mod.unmute</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/unmute <span class="required">&lt;user&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to unmute</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for unmuting</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/unmute @John Served their time</code></div>
+            </div>
+        </div>
+
+        <!-- /timeout -->
+        <div class="cmd-row" data-cmd="timeout">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/timeout<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Timeout a user using Discord's built-in timeout feature</span>
+                <span class="cmd-perm">mod.timeout</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/timeout <span class="required">&lt;user&gt;</span> <span class="required">&lt;duration&gt;</span> <span class="optional">[reason]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to timeout</td></tr>
+                    <tr><td><code>duration</code></td><td>String</td><td><span class="param-required">Yes</span></td><td>Duration (e.g., <code>1h</code>, <code>30m</code>, <code>1d</code>). Max 28 days</td></tr>
+                    <tr><td><code>reason</code></td><td>String</td><td><span class="param-optional">No</span></td><td>Reason for the timeout</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/timeout @John 1h Needs to cool down</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Uses Discord's native timeout feature — the user cannot send messages, react, or join voice channels for the duration.</li>
+                    <li>Requires the bot to have the <strong>Moderate Members</strong> permission.</li>
+                    <li>Maximum duration is 28 days (Discord limitation).</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/timeout-example.png" alt="Timeout command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /timeout command</p>
+            </div>
+        </div>
+
+        <!-- /hist -->
+        <div class="cmd-row" data-cmd="hist">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/hist<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">View a user's full moderation history</span>
+                <span class="cmd-perm">mod.history</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/hist <span class="required">&lt;user&gt;</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>The user to view history for</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/hist @John</code> — View John's moderation history</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Shows the last 20 moderation actions for the user (bans, kicks, warns, mutes, etc.).</li>
+                    <li>Each entry includes the action type, reason, moderator, and timestamp.</li>
+                    <li>Useful for reviewing a user's track record before taking further action.</li>
+                </ul>
+                <h4>Screenshot</h4>
+                <img src="assets/hist-example.png" alt="Hist command example" class="cmd-screenshot">
+                <p class="screenshot-caption">Example of the /hist command output</p>
+            </div>
+        </div>
+
+        <!-- /purge -->
+        <div class="cmd-row" data-cmd="purge">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/purge<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Bulk delete messages, reactions, replies, or threads</span>
+                <span class="cmd-perm">mod.purge</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/purge <span class="required">&lt;type&gt;</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>type</code></td><td>Choice</td><td><span class="param-required">Yes</span></td><td>What to purge: <code>messages</code>, <code>reactions</code>, <code>replies</code>, or <code>threads</code></td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/purge messages</code> — Bulk delete recent messages</div>
+                <div class="example-block"><code>/purge reactions</code> — Clear all reactions from recent messages</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Requires <strong>Manage Messages</strong> and <strong>Read Message History</strong> bot permissions.</li>
+                    <li>Messages older than 14 days cannot be bulk-deleted (Discord limitation).</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- /lockdown -->
+        <div class="cmd-row" data-cmd="lockdown">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/lockdown<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Lock or unlock a channel to prevent regular users from sending messages</span>
+                <span class="cmd-perm">mod.lockdown</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/lockdown <span class="optional">[channel]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>channel</code></td><td>Channel</td><td><span class="param-optional">No</span></td><td>Channel to lock/unlock. Defaults to the current channel</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/lockdown</code> — Toggle lockdown on the current channel</div>
+                <div class="example-block"><code>/lockdown #general</code> — Lock/unlock a specific channel</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Toggles the channel's permission override for <code>@everyone</code> to deny sending messages.</li>
+                    <li>Running the command again unlocks the channel.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- ECONOMY -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-economy" data-category="economy">
+        <h2 class="category-title">Economy</h2>
+
+        <div class="cmd-row" data-cmd="balance">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/balance<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Check your or another user's balance</span>
+                <span class="cmd-perm">economy.balance</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/balance <span class="optional">[user]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-optional">No</span></td><td>User to check. Defaults to yourself</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/balance</code> — Check your own balance</div>
+                <div class="example-block"><code>/balance @John</code> — Check John's balance</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="daily">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/daily<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Claim your daily reward</span>
+                <span class="cmd-perm">economy.daily</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/daily</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Awards the server's configured daily reward amount.</li>
+                    <li>Can only be claimed once every 24 hours.</li>
+                    <li>The daily reward amount is configurable via <code>/settings</code>.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="work">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/work<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Work a random job to earn points</span>
+                <span class="cmd-perm">economy.work</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/work</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Generates a random job scenario and reward.</li>
+                    <li>Has a cooldown between uses.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="pay">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/pay<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Pay coins to another user</span>
+                <span class="cmd-perm">economy.pay</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/pay <span class="required">&lt;user&gt;</span> <span class="required">&lt;amount&gt;</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>user</code></td><td>User</td><td><span class="param-required">Yes</span></td><td>User to pay</td></tr>
+                    <tr><td><code>amount</code></td><td>Integer</td><td><span class="param-required">Yes</span></td><td>Amount of coins to transfer</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/pay @John 500</code> — Transfer 500 coins to John</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="rob">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/rob<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Attempt to rob points from another user</span>
+                <span class="cmd-perm">economy.rob</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/rob <span class="required">&lt;user&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Has a chance to succeed or fail. If you fail, you lose coins.</li>
+                    <li>You can only rob coins from a user's <strong>wallet</strong> — bank balance is protected.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="baltop">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/baltop<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Shows the server balance leaderboard</span>
+                <span class="cmd-perm">economy.baltop</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/baltop</div>
+                <h4>Details</h4>
+                <ul><li>Displays a leaderboard of the richest users in the server.</li></ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="bank">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/bank<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage banking — deposit, withdraw, loans, and admin settings</span>
+                <span class="cmd-perm">economy.balance</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/bank <span class="required">&lt;setting&gt;</span> <span class="optional">[action]</span> <span class="optional">[user]</span> <span class="optional">[amount]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/bank setting:balance</code> — View your bank balance</div>
+                <div class="example-block"><code>/bank setting:balance action:add user:@John amount:1000</code> — Admin: add 1000 to John's bank</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Bank balance is protected from <code>/rob</code>.</li>
+                    <li>Admins can configure max loan amounts, interest rates, and auto-collection.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="gamble">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/gamble<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Try your luck with various gambling games</span>
+                <span class="cmd-perm">economy.games.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/gamble <span class="required">&lt;game&gt;</span> <span class="required">&lt;points&gt;</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>game</code></td><td>Choice</td><td><span class="param-required">Yes</span></td><td>Game to play: <code>blackjack</code>, <code>cointoss</code>, <code>poker</code>, <code>rockpaperscissors</code></td></tr>
+                    <tr><td><code>points</code></td><td>Integer</td><td><span class="param-required">Yes</span></td><td>Amount of coins to bet</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="blackjack">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/blackjack<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Play a game of blackjack</span>
+                <span class="cmd-perm">economy.games.blackjack</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/blackjack <span class="required">&lt;bet&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Full blackjack with Hit, Stand, and Double Down buttons.</li>
+                    <li>Interactive button-based interface.</li>
+                    <li>Standard blackjack rules and payouts.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="flip">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/flip<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Flip a coin and bet on heads or tails</span>
+                <span class="cmd-perm">economy.games.flip</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/flip <span class="required">&lt;bet&gt;</span> <span class="required">&lt;choice&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="dice">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/dice<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Roll a dice and bet on the outcome</span>
+                <span class="cmd-perm">economy.games.dice</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/dice <span class="required">&lt;bet&gt;</span> <span class="required">&lt;number&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="slots">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/slots<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Play the slot machine</span>
+                <span class="cmd-perm">economy.games.slots</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/slots <span class="required">&lt;bet&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Triple match: big multiplier payout (up to 20x for rare symbols).</li>
+                    <li>Double match: smaller payout (1x-2x).</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="chargeback">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/chargeback<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Reverse a transaction and log the action (admin)</span>
+                <span class="cmd-perm">economy.admin.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/chargeback <span class="required">&lt;id&gt;</span> <span class="required">&lt;reason&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="add">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/add<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Add to a user's balance (admin)</span>
+                <span class="cmd-perm">economy.admin.add</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/add <span class="required">&lt;user&gt;</span> <span class="required">&lt;amount&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="subtract">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/subtract<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Subtract from a user's balance (admin)</span>
+                <span class="cmd-perm">economy.admin.remove</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/subtract <span class="required">&lt;user&gt;</span> <span class="required">&lt;amount&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="set">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/set<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Set a user's balance (admin)</span>
+                <span class="cmd-perm">economy.admin.set</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/set <span class="required">&lt;user&gt;</span> <span class="required">&lt;amount&gt;</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- LEVELING -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-leveling" data-category="leveling">
+        <h2 class="category-title">Leveling</h2>
+
+        <div class="cmd-row" data-cmd="rank">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/rank<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Display rank information for a user</span>
+                <span class="cmd-perm">leveling.rank</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/rank <span class="optional">[user]</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Shows level, XP, XP needed for next level, and server rank position.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="leaderboard">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/leaderboard<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Show the XP/level leaderboard</span>
+                <span class="cmd-perm">leveling.leaderboard</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/leaderboard</div>
+                <h4>Details</h4>
+                <ul><li>Displays the top users by XP in the server. Alias: <code>/lb</code></li></ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="xp">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/xp<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage user XP (add, subtract, or set)</span>
+                <span class="cmd-perm">leveling.admin.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/xp <span class="required">&lt;action&gt;</span> <span class="required">&lt;amount&gt;</span> <span class="required">&lt;user&gt;</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/xp add 500 @John</code> — Add 500 XP to John</div>
+                <div class="example-block"><code>/xp set 0 @User</code> — Reset a user's XP to 0</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="level">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/level<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage user levels (add, subtract, or set)</span>
+                <span class="cmd-perm">leveling.admin.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/level <span class="required">&lt;action&gt;</span> <span class="required">&lt;level&gt;</span> <span class="required">&lt;user&gt;</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/level set 10 @John</code> — Set John's level to 10</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- GAMES -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-games" data-category="games">
+        <h2 class="category-title">Games</h2>
+
+        <div class="cmd-row" data-cmd="chess">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/chess<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Start a chess game against another player or the bot</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/chess <span class="optional">[opponent]</span></div>
+                <h4>Parameters</h4>
+                <table class="param-table">
+                    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+                    <tr><td><code>opponent</code></td><td>User</td><td><span class="param-optional">No</span></td><td>Player to challenge. Leave empty to play against the bot AI</td></tr>
+                </table>
+                <h4>Details</h4>
+                <ul>
+                    <li>Full chess with move validation, check/checkmate detection.</li>
+                    <li>Interactive button interface for moves, draw offers, and resignation.</li>
+                    <li>Board rendered with text and emoji pieces.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="poker">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/poker<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Play five-card draw poker</span>
+                <span class="cmd-perm">economy.games.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/poker <span class="required">&lt;bet&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Five-card draw with hold/discard mechanics via buttons.</li>
+                    <li>Standard poker hand rankings and payouts.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- CONFIGURATION -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-configuration" data-category="configuration">
+        <h2 class="category-title">Configuration</h2>
+
+        <div class="cmd-row" data-cmd="settings">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/settings<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure server settings</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/settings <span class="required">&lt;setting&gt;</span> <span class="optional">[value]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/settings setting:daily-reward value:100</code> — Set the daily reward to 100 coins</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Central hub for all server configuration — economy, leveling, moderation, and general settings.</li>
+                    <li>Run without a value to see the current setting.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="autoconfig">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/autoconfig<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Launch the guided bot configuration wizard</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/autoconfig</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Walks you through configuring the bot step-by-step with interactive menus.</li>
+                    <li>Covers log channels, moderation settings, economy toggles, welcome messages, and more.</li>
+                    <li>Recommended for first-time setup.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="permissions">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/permissions<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage user, role, and server permissions</span>
+                <span class="cmd-perm">admin.permissions</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/permissions <span class="required">&lt;target&gt;</span> <span class="required">&lt;action&gt;</span> <span class="optional">[target-entity]</span> <span class="optional">[node]</span> <span class="optional">[value]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/permissions target:user action:set target-entity:@John node:mod.ban value:true</code></div>
+                <div class="example-block"><code>/permissions target:role action:view target-entity:@Moderator</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Supports <code>user</code>, <code>role</code>, and <code>everyone</code> targets.</li>
+                    <li>Actions: <code>set</code>, <code>remove</code>, <code>view</code>.</li>
+                    <li>See <a href="permissions.html">Permissions</a> for the full list of nodes.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="config">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/config<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage bot configuration</span>
+                <span class="cmd-perm">admin.config</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/config <span class="optional">[action]</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="levels">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/levels<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Enable or disable the leveling system</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/levels <span class="required">&lt;enable/disable&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="points">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/points<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Enable or disable the economy system</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/points <span class="required">&lt;enable/disable&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="logging">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/logging<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure server logging channels</span>
+                <span class="cmd-perm">logging.channel</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/logging <span class="required">&lt;type&gt;</span> <span class="required">&lt;channel&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="log">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/log<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Create a manual log entry</span>
+                <span class="cmd-perm">logging.enable</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/log <span class="required">&lt;type&gt;</span> <span class="required">&lt;message&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="automod">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/automod<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure auto-moderation filters</span>
+                <span class="cmd-perm">automod.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/automod <span class="required">&lt;action&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Configure spam detection, link filtering, mention spam, caps filter, invite blocking, and word blacklists.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="antispam">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/antispam<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure anti-spam protection</span>
+                <span class="cmd-perm">automod.spam</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/antispam <span class="required">&lt;setting&gt;</span> <span class="optional">[value]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/antispam setting:message-limit amount:10</code></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="welcome">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/welcome<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure welcome messages and auto-roles</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/welcome <span class="required">&lt;action&gt;</span> <span class="optional">[value]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/welcome action:message text:Welcome {user} to {server}!</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Actions: <code>view</code>, <code>message</code>, <code>embed-color</code>, <code>auto-role</code>, <code>enable</code>, <code>test</code></li>
+                    <li>Variables: <code>{user}</code>, <code>{server}</code>, <code>{membercount}</code>, etc.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="reactionrole">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/reactionrole<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage reaction role systems</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/reactionrole <span class="required">&lt;action&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="rolepersistence">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/rolepersistence<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure role persistence for users who rejoin</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/rolepersistence <span class="required">&lt;action&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="punishment-dm">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/punishment-dm<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage punishment DM notification settings</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/punishment-dm <span class="required">&lt;action&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>When enabled, users receive a DM when punished with the reason, duration, and an appeal button.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="suspiciousnotify">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/suspiciousnotify<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage suspicious account notification settings</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/suspiciousnotify <span class="required">&lt;action&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="prefix">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/prefix<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Configure prefix command settings</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/prefix <span class="required">&lt;action&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="backup">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/backup<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Create and restore server configuration backups</span>
+                <span class="cmd-perm">admin.settings</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/backup <span class="required">&lt;action&gt;</span> <span class="optional">[timestamp]</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Subcommands: <code>create</code>, <code>list</code>, <code>delete</code>, <code>restore</code></li>
+                    <li>Backups include settings, permissions, logging config, and more.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- PROXY SYSTEM -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-proxy" data-category="proxy">
+        <h2 class="category-title">Proxy System</h2>
+
+        <div class="cmd-row" data-cmd="proxy">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/proxy<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage proxy members (PluralKit-style) — create, edit, delete, list</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/proxy <span class="required">&lt;action&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Create proxy identities that send messages via webhooks with custom names and avatars.</li>
+                    <li>Set prefix/suffix proxy tags (e.g., typing <code>{Hello}</code> sends as a proxy member).</li>
+                    <li>See <a href="features.html#proxy">Proxy Features</a> for a full guide.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="proxysettings">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/proxysettings<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage proxy settings and switch active members</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/proxysettings <span class="required">&lt;action&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Use <code>switch &lt;member&gt;</code> to auto-proxy all messages as a specific member.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TICKETS -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-tickets" data-category="tickets">
+        <h2 class="category-title">Tickets</h2>
+
+        <div class="cmd-row" data-cmd="ticket">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/ticket<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage support tickets — create, close, add users, panels, categories</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/ticket <span class="required">&lt;action&gt;</span> <span class="optional">[options]</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Subcommands: <code>create</code>, <code>close</code>, <code>add</code>, <code>remove</code>, <code>panel</code>, <code>settings</code>, <code>categories</code></li>
+                    <li>Ticket panels let users open tickets with a button click.</li>
+                    <li>Categories allow organizing different types of support requests.</li>
+                    <li>Transcript logging available for closed tickets.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- GLOBAL CHAT -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-globalchat" data-category="globalchat">
+        <h2 class="category-title">Global Chat</h2>
+
+        <div class="cmd-row" data-cmd="globalchat">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/globalchat<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage cross-server global chat channels</span>
+                <span class="cmd-perm">globalchat.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/globalchat <span class="required">&lt;subcommand&gt;</span></div>
+                <h4>Subcommands</h4>
+                <table class="param-table">
+                    <tr><th>Subcommand</th><th>Description</th></tr>
+                    <tr><td><code>create</code></td><td>Create a new global chat channel (name, description, visibility, key)</td></tr>
+                    <tr><td><code>edit</code></td><td>Edit an existing global chat channel's properties</td></tr>
+                    <tr><td><code>delete</code></td><td>Delete a global chat channel you own</td></tr>
+                    <tr><td><code>link</code></td><td>Link a server channel to a global chat</td></tr>
+                    <tr><td><code>unlink</code></td><td>Unlink a server channel from its global chat</td></tr>
+                    <tr><td><code>info</code></td><td>View info about a global chat channel</td></tr>
+                    <tr><td><code>list</code></td><td>List your global chat channels</td></tr>
+                    <tr><td><code>setrules</code></td><td>Set rules for your global chat channel</td></tr>
+                    <tr><td><code>manage</code></td><td>Open the management panel (DM only)</td></tr>
+                    <tr><td><code>kick</code></td><td>Kick a server from your global chat</td></tr>
+                    <tr><td><code>ban</code></td><td>Ban a server from your global chat</td></tr>
+                    <tr><td><code>unban</code></td><td>Unban a server</td></tr>
+                    <tr><td><code>warn</code></td><td>Warn a server</td></tr>
+                    <tr><td><code>unwarn</code></td><td>Clear warnings for a server</td></tr>
+                    <tr><td><code>mute</code></td><td>Mute a server (with optional duration)</td></tr>
+                    <tr><td><code>unmute</code></td><td>Unmute a server</td></tr>
+                    <tr><td><code>addmod</code></td><td>Add a moderator to your channel</td></tr>
+                    <tr><td><code>removemod</code></td><td>Remove a moderator</td></tr>
+                    <tr><td><code>addcoowner</code></td><td>Add a co-owner to your channel</td></tr>
+                </table>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/globalchat create name:Lounge description:A chill cross-server chat</code></div>
+                <div class="example-block"><code>/globalchat link channelid:abc123 channel:#global</code></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Messages relay across servers via webhooks. See <a href="features.html#globalchat">Global Chat Features</a> for full details.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- UTILITY -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-utility" data-category="utility">
+        <h2 class="category-title">Utility</h2>
+
+        <div class="cmd-row" data-cmd="help">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/help<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Get help with bot commands</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/help <span class="optional">[command]</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Without arguments: shows all commands by category.</li>
+                    <li>With a command name: shows detailed help for that specific command.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="ping">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/ping<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Check bot latency and response time</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/ping</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="info">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/info<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Show bot information and statistics</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/info</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="serverstats">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/serverstats<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Display comprehensive server statistics</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/serverstats</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="echo">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/echo<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Send a message to a channel as the bot</span>
+                <span class="cmd-perm">utility.echo</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/echo <span class="required">&lt;message&gt;</span> <span class="optional">[channel]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/echo Hello World #general</code></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="embed">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/embed<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Create custom embeds with various styling options</span>
+                <span class="cmd-perm">utility.echo</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/embed <span class="required">&lt;type&gt;</span> <span class="required">&lt;title&gt;</span> <span class="required">&lt;description&gt;</span> <span class="optional">[color]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/embed type:simple title:Welcome description:Hello everyone! color:#ff0000</code></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="talkas">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/talkas<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Send a message as a webhook with custom name and avatar</span>
+                <span class="cmd-perm">utility.echo</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/talkas <span class="required">&lt;name&gt;</span> <span class="required">&lt;message&gt;</span> <span class="optional">[avatar]</span> <span class="optional">[channel]</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="rules">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/rules<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage and display server rules</span>
+                <span class="cmd-perm">rules.*</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/rules <span class="required">&lt;action&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="pride">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/pride<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Apply pride flag overlays to avatars or images</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/pride <span class="required">&lt;type&gt;</span> <span class="required">&lt;flag&gt;</span> <span class="optional">[url]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/pride type:avatar flag:rainbow</code></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="flags">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/flags<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">List and display available pride flags</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/flags</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="pronouns">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/pronouns<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Set pronoun roles for yourself or another user</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/pronouns <span class="required">&lt;action&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="joke">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/joke<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Get a random joke</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/joke</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="dadjoke">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/dadjoke<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Get a random dad joke</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/dadjoke</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="error">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/error<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">View comprehensive error code documentation</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/error <span class="optional">[category]</span></div>
+                <h4>Examples</h4>
+                <div class="example-block"><code>/error category:S</code> — View settings error codes</div>
+                <h4>Details</h4>
+                <ul><li>Categories range from A to W, each covering a different area of the bot.</li></ul>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="privacy">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/privacy<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">View the bot's privacy policy and data practices</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/privacy</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="deletedata">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/deletedata<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Delete all your personal data stored by the bot</span>
+                <span class="cmd-perm">—</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/deletedata</div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Permanently deletes all your personal data with a confirmation step.</li>
+                    <li>This action cannot be undone.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- OWNER ONLY -->
+    <!-- ============================================================ -->
+    <div class="category-section" id="cat-owner" data-category="owner">
+        <h2 class="category-title">Owner Only</h2>
+
+        <div class="cmd-row" data-cmd="statusmsg">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/statusmsg<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Set bot custom status message</span>
+                <span class="cmd-perm">Owner only</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/statusmsg <span class="optional">[message]</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="rpc">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/rpc<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Set the bot's rich presence (activity)</span>
+                <span class="cmd-perm">Owner only</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/rpc <span class="required">&lt;activity&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="appearance">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/appearance<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Set bot online appearance (online, idle, DnD, invisible)</span>
+                <span class="cmd-perm">Owner only</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/appearance <span class="required">&lt;status&gt;</span></div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="restart">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/restart<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Restart the bot</span>
+                <span class="cmd-perm">Owner only</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/restart</div>
+            </div>
+        </div>
+
+        <div class="cmd-row" data-cmd="suspiciouslist">
+            <div class="cmd-summary" onclick="toggleCmd(this)">
+                <span class="cmd-name">/suspiciouslist<span class="cmd-expand-icon">&#9654;</span></span>
+                <span class="cmd-desc">Manage the global suspicious users masterlist</span>
+                <span class="cmd-perm">Owner only</span>
+            </div>
+            <div class="cmd-detail">
+                <h4>Syntax</h4>
+                <div class="syntax-block">/suspiciouslist <span class="required">&lt;action&gt;</span></div>
+                <h4>Details</h4>
+                <ul>
+                    <li>Subcommands: <code>add</code>, <code>remove</code>, <code>check</code>, <code>list</code>, <code>validate</code></li>
+                    <li>Cross-server suspicious user tracking managed by the bot owner.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2025 Kelpyyium &bull; <a href="index.html">Home</a> &bull; <a href="features.html">Features</a></p>
+    </div>
+
+    <script>
+        function toggleCmd(el) {
+            const row = el.closest('.cmd-row');
+            row.classList.toggle('open');
+        }
+
+        function filterCommands() {
+            const query = document.getElementById('cmdSearch').value.toLowerCase();
+            let anyVisible = false;
+
+            document.querySelectorAll('.cmd-row').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                const match = text.includes(query);
+                row.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+
+            document.querySelectorAll('.category-section').forEach(section => {
+                const hasVisible = Array.from(section.querySelectorAll('.cmd-row')).some(r => r.style.display !== 'none');
+                section.style.display = hasVisible ? '' : 'none';
+            });
+
+            document.getElementById('no-results').style.display = anyVisible ? 'none' : 'block';
+        }
+    </script>
+
+</body>
+</html>

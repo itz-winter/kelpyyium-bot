@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Guide — Kelpyyium</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        .page-header {
+            text-align: center;
+            padding: 40px 20px 20px;
+            animation: fadeIn 0.4s ease;
+        }
+        .page-header h1 { color: #ffffff; font-size: 36px; }
+        .page-header p { color: #b0a0cc; font-size: 16px; }
+        .back { padding: 0 20px; max-width: 900px; margin: 0 auto; }
+        .back a { display: inline; color: #9080b0; font-size: 14px; }
+        .content {
+            max-width: 900px;
+            margin: 24px auto;
+            padding: 0 20px;
+        }
+        .section {
+            background-color: #ffffff;
+            border: 1px solid #6f6f6f;
+            border-radius: 10px;
+            padding: 28px;
+            margin-bottom: 20px;
+            animation: fadeIn 0.4s ease;
+        }
+        .section h2 {
+            text-align: left;
+            color: #0b0022;
+            font-size: 22px;
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+        .section h3 {
+            color: #0b0022;
+            font-size: 18px;
+            margin-top: 20px;
+            margin-bottom: 8px;
+        }
+        .section p, .section li {
+            color: #333;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+        .section ul, .section ol {
+            padding-left: 20px;
+        }
+        .section li { margin-bottom: 8px; }
+        code {
+            background-color: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .code-block {
+            background-color: #1a0a3e;
+            color: #e0d8f0;
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        .highlight {
+            background-color: #f5f3fa;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border-left: 4px solid #0b0022;
+            margin: 12px 0;
+        }
+        .step-number {
+            display: inline-block;
+            background-color: #0b0022;
+            color: #ffffff;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 32px;
+            font-weight: bold;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        .step-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #0b0022;
+        }
+        .step {
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .step:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6f6f6f;
+            font-size: 13px;
+        }
+        .footer a { display: inline; color: #9080b0; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+    <div class="back">
+        <a href="index.html">← Back to Home</a>
+    </div>
+
+    <div class="page-header">
+        <h1>Setup Guide</h1>
+        <p>Add Kelpyyium to your Discord server and get started in minutes.</p>
+    </div>
+
+    <div class="content">
+
+        <!-- Adding the Bot -->
+        <div class="section">
+            <h2>Adding Kelpyyium to Your Server</h2>
+
+            <div class="step">
+                <span class="step-number">1</span><span class="step-title">Invite the Bot</span>
+                <p>Use the official invite link to add Kelpyyium to your server. You must have the <strong>Manage Server</strong> permission in the server you want to add it to.</p>
+                <button onclick="window.location.href='https://discord.com/oauth2/authorize?client_id=1400150873971359956&scope=bot&permissions=8'">Invite me!</button>
+            </div>
+
+            <div class="step">
+                <span class="step-number">2</span><span class="step-title">Grant the Right Permissions</span>
+                <p>When invited, Kelpyyium will request the permissions it needs. For full functionality, grant <strong>Administrator</strong>, or at minimum:</p>
+                <ul>
+                    <li>Manage Roles, Manage Channels, Manage Messages</li>
+                    <li>Ban Members, Kick Members, Moderate Members</li>
+                    <li>View Audit Log, Read Message History</li>
+                    <li>Send Messages, Embed Links, Attach Files</li>
+                    <li>Use External Emojis, Add Reactions</li>
+                </ul>
+                <p>See the <a href="permissions.html" style="display:inline;color:#0b0022;font-size:15px;">Permissions page</a> for details on Kelpyyium's internal permission node system.</p>
+            </div>
+
+            <div class="step">
+                <span class="step-number">3</span><span class="step-title">Run the Auto-Config Wizard</span>
+                <p>Once the bot is in your server, run <code>/autoconfig</code> to launch the setup wizard. It will walk you through everything automatically.</p>
+            </div>
+        </div>
+
+        <!-- First Steps -->
+        <div class="section">
+            <h2>First Steps After Setup</h2>
+
+            <h3>Auto-Config Wizard</h3>
+            <p>The fastest way to configure your server is the <strong>auto-config wizard</strong>. Run <code>/autoconfig</code> and it will walk you through setting up:</p>
+            <ul>
+                <li>Moderation log channel</li>
+                <li>Message log channel</li>
+                <li>Join/leave log channel</li>
+                <li>Suspicious account notifications</li>
+                <li>Feature toggles (economy, leveling, etc.)</li>
+            </ul>
+
+            <h3>Manual Configuration</h3>
+            <p>Alternatively, configure individual features with these commands:</p>
+            <ul>
+                <li><code>/settings</code> — general server settings</li>
+                <li><code>/logging</code> — configure log channels</li>
+                <li><code>/levels enable</code> — enable the leveling system</li>
+                <li><code>/points enable</code> — enable the economy system</li>
+                <li><code>/automod config</code> — configure auto-moderation</li>
+                <li><code>/welcome</code> — set up welcome messages</li>
+                <li><code>/permissions</code> — configure permissions</li>
+            </ul>
+
+            <h3>Setting Up Permissions</h3>
+            <p>By default, only basic utility commands are available to all users. To grant moderation access to your staff:</p>
+            <div class="code-block"><span style="color:#7a6a9a;"># Give moderators all moderation perms</span>
+/permissions role-set @Moderator mod.* true
+
+<span style="color:#7a6a9a;"># Give admins full config access</span>
+/permissions role-set @Admin admin.* true
+
+<span style="color:#7a6a9a;"># Enable economy for everyone</span>
+/permissions everyone-set economy.* true</div>
+            <p>See the <a href="permissions.html" style="display:inline;color:#0b0022;font-size:15px;">Permissions page</a> for the full node reference.</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2026 Kelpyyium &bull; <a href="index.html">Home</a> &bull; <a href="commands.html">Commands</a></p>
+    </div>
+
+</body>
+</html>

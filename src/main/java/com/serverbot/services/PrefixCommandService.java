@@ -1,0 +1,3310 @@
+package com.serverbot.services;
+
+import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.Role;
+import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
+import net.dv8tion.jda.api.EmbedBuilder;
+import net.dv8tion.jda.api.interactions.components.buttons.Button;
+import com.serverbot.utils.EmbedUtils;
+import com.serverbot.utils.CustomEmojis;
+import com.serverbot.utils.PermissionManager;
+import com.serverbot.utils.AutoLogUtils;
+import com.serverbot.utils.TimeUtils;
+import com.serverbot.utils.DismissibleMessage;
+import com.serverbot.commands.SlashCommand;
+import com.serverbot.ServerBot;
+import com.serverbot.models.ProxySettings;
+import com.serverbot.models.ProxyMember;
+import com.serverbot.services.PunishmentNotificationService;
+import com.serverbot.services.PunishmentNotificationService.PunishmentType;
+
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.concurrent.TimeUnit;
+import java.util.Random;
+
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
+/**
+ * Service for handling prefix commands by translating them to slash commands
+ * This approach ensures consistency between prefix and slash command functionality
+ */
+public class PrefixCommandService {
+    private static final String DEFAULT_PREFIX = "!";
+    private static final Pattern USER_MENTION = Pattern.compile("<@!?(\\d+)>");
+    
+    private final CommandManager commandManager;
+    
+    // Command aliases mapping
+    private static final Map<String, String> COMMAND_ALIASES = Map.ofEntries(
+        Map.entry("h", "help"),
+        Map.entry("p", "permissions"),
+        Map.entry("perms", "permissions"),
+        Map.entry("a", "automod"),
+        Map.entry("amod", "automod"),
+        Map.entry("w", "work"),
+        Map.entry("bal", "balance"),
+        Map.entry("points", "balance"),
+        Map.entry("lb", "leaderboard"),
+        Map.entry("t", "ticket"),
+        Map.entry("new", "ticket"),
+        Map.entry("close", "ticket"),
+        Map.entry("ping", "ping"),
+        Map.entry("info", "info"),
+        Map.entry("botinfo", "info"),
+        Map.entry("serverinfo", "serverinfo"),
+        Map.entry("sinfo", "serverinfo"),
+        Map.entry("server", "serverinfo"),
+        Map.entry("stats", "serverstats"),
+        Map.entry("r", "rank"),
+        Map.entry("level", "rank"),
+        Map.entry("xp", "xp"),
+        Map.entry("pay", "pay"),
+        Map.entry("baltop", "baltop"),
+        Map.entry("daily", "daily"),
+        Map.entry("work", "work"),
+        Map.entry("gamble", "gamble"),
+        Map.entry("slots", "slots"),
+        Map.entry("flip", "flip"),
+        Map.entry("dice", "dice"),
+        Map.entry("ban", "ban"),
+        Map.entry("kick", "kick"),
+        Map.entry("warn", "warn"),
+        Map.entry("mute", "mute"),
+        Map.entry("timeout", "timeout"),
+        Map.entry("purge", "purge"),
+        Map.entry("echo", "echo"),
+        Map.entry("rules", "rules"),
+        Map.entry("talkas", "talkas")
+    );
+
+    public PrefixCommandService(CommandManager commandManager) {
+        this.commandManager = commandManager;
+    }
+    
+    /**
+     * Get the prefix for a guild, or default if not in a guild
+     */
+    private String getGuildPrefix(MessageReceivedEvent event) {
+        if (event.isFromGuild()) {
+            return ServerBot.getStorageManager().getPrefix(event.getGuild().getId());
+        }
+        return DEFAULT_PREFIX;
+    }
+    
+    /**
+     * Process a prefix command by translating it to a slash command
+     */
+    public void handlePrefixCommand(MessageReceivedEvent event) {
+        String content = event.getMessage().getContentRaw().trim();
+        
+        // Check if it's a proxy command (px; prefix)
+        if (content.startsWith("px;")) {
+            handleProxyCommand(event, content.substring(3).trim());
+            return;
+        }
+        
+        // Get the prefix for this guild
+        String prefix = getGuildPrefix(event);
+        
+        // Check if it's a regular prefix command
+        if (!content.startsWith(prefix)) {
+            // Also check default prefix for backwards compatibility
+            if (!content.startsWith(DEFAULT_PREFIX)) {
+                return;
+            }
+            prefix = DEFAULT_PREFIX;
+        }
+        
+        // Parse the command and arguments
+        String[] parts = content.substring(prefix.length()).split("\\s+");
+        if (parts.length == 0 || parts[0].isEmpty()) {
+            return;
+        }
+        
+        String commandName = parts[0].toLowerCase();
+        String[] args = Arrays.copyOfRange(parts, 1, parts.length);
+        
+        // Resolve aliases
+        commandName = COMMAND_ALIASES.getOrDefault(commandName, commandName);
+        
+        // Check if prefix commands are enabled for this guild
+        if (event.isFromGuild()) {
+            String guildId = event.getGuild().getId();
+            
+            // Check if prefix commands are globally disabled
+            if (!ServerBot.getStorageManager().arePrefixCommandsEnabled(guildId)) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Prefix Commands Disabled",
+                    "Prefix commands are disabled for this server. Please use slash commands instead."
+                )).queue();
+                return;
+            }
+            
+            // Check if this specific command is disabled
+            if (!ServerBot.getStorageManager().isPrefixCommandEnabled(guildId, commandName)) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Command Disabled",
+                    "The prefix command `" + prefix + commandName + "` is disabled for this server.\n" +
+                    "You can still use the slash command version: `/" + commandName + "`"
+                )).queue();
+                return;
+            }
+        }
+        
+        // Get the corresponding slash command
+        SlashCommand slashCommand = commandManager.getCommand(commandName);
+        if (slashCommand == null) {
+            // Command not found
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Unknown Command",
+                "The command `" + prefix + commandName + "` was not found. Use `" + prefix + "help` to see available commands."
+            )).queue();
+            return;
+        }
+        
+        try {
+            // Handle the command based on its type
+            handleSpecificCommand(event, commandName, args, slashCommand);
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Command Error",
+                "An error occurred while executing the command: " + e.getMessage()
+            )).queue();
+        }
+    }
+    
+    /**
+     * Handle specific commands by calling their logic directly
+     */
+    private void handleSpecificCommand(MessageReceivedEvent event, String commandName, String[] args, SlashCommand slashCommand) {
+        // Parse arguments for this command
+        Map<String, String> options = parseArguments(commandName, args);
+        
+        switch (commandName.toLowerCase()) {
+            case "work":
+                handleWorkCommand(event);
+                break;
+            case "ping":
+                handlePingCommand(event);
+                break;
+            case "balance":
+                handleBalanceCommand(event, options);
+                break;
+            case "pay":
+                handlePayCommand(event, options);
+                break;
+            case "baltop":
+                handleBaltopCommand(event);
+                break;
+            case "help":
+                handleHelpCommand(event, options);
+                break;
+            case "rank":
+                handleRankCommand(event, options);
+                break;
+            case "lb":
+            case "leaderboard":
+                handleLeaderboardCommand(event);
+                break;
+            case "echo":
+                handleEchoCommand(event, options);
+                break;
+            case "talkas":
+                handleTalkAsCommand(event, options);
+                break;
+            case "permissions":
+                handlePermissionsCommand(event, options);
+                break;
+            case "warn":
+                handleWarnCommand(event, options);
+                break;
+            case "ban":
+                handleBanCommand(event, options);
+                break;
+            case "kick":
+                handleKickCommand(event, options);
+                break;
+            case "mute":
+                handleMuteCommand(event, options);
+                break;
+            case "timeout":
+                handleTimeoutCommand(event, options);
+                break;
+            case "info":
+                handleInfoCommand(event, options);
+                break;
+            case "serverinfo":
+                handleServerInfoCommand(event, options);
+                break;
+            case "xp":
+                handleXpCommand(event, options);
+                break;
+            case "daily":
+                handleDailyCommand(event, options);
+                break;
+            case "error":
+                handleErrorCommand(event, options);
+                break;
+            // Unpunishment commands
+            case "unban":
+                handleUnbanCommand(event, options);
+                break;
+            case "unmute":
+                handleUnmuteCommand(event, options);
+                break;
+            case "unwarn":
+                handleUnwarnCommand(event, options);
+                break;
+            // Gambling/Games commands
+            case "gamble":
+                handleGambleCommand(event, options);
+                break;
+            case "slots":
+                handleSlotsCommand(event, options);
+                break;
+            case "flip":
+                handleFlipCommand(event, options);
+                break;
+            case "dice":
+                handleDiceCommand(event, options);
+                break;
+            // Utility commands
+            case "purge":
+                handlePurgeCommand(event, options);
+                break;
+            case "automod":
+                handleAutomodCommand(event, options);
+                break;
+            case "serverstats":
+                handleServerstatsCommand(event);
+                break;
+            case "rules":
+                handleRulesCommand(event, options);
+                break;
+            case "ticket":
+                handleTicketCommand(event, options);
+                break;
+            default:
+                // For commands not specifically implemented yet
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Command Not Implemented",
+                    String.format("The prefix command `!%s` is not yet implemented for prefix usage.\nPlease use `/%s` instead.", 
+                        commandName, commandName)
+                )).queue();
+                break;
+        }
+    }
+    
+    /**
+     * Parse prefix command arguments into a map
+     */
+    private Map<String, String> parseArguments(String commandName, String[] args) {
+        Map<String, String> options = new HashMap<>();
+        List<String> positionalArgs = new ArrayList<>();
+        
+        // Parse flags and positional arguments
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            
+            if (arg.startsWith("-") && arg.length() > 1 && i + 1 < args.length) {
+                // This is a flag
+                String flag = arg.substring(1);
+                String value = args[i + 1];
+                
+                // Map common flags to option names
+                String optionName = mapFlagToOption(flag);
+                options.put(optionName, value);
+                i++; // Skip the value
+            } else if (!arg.startsWith("-")) {
+                // This is a positional argument
+                positionalArgs.add(arg);
+            }
+        }
+        
+        // Handle positional arguments based on command
+        handlePositionalArguments(commandName, options, positionalArgs);
+        
+        return options;
+    }
+    
+    /**
+     * Map prefix command flags to slash command option names
+     */
+    private String mapFlagToOption(String flag) {
+        return switch (flag.toLowerCase()) {
+            case "u", "user" -> "user";
+            case "r", "role" -> "role";
+            case "c", "channel" -> "channel";
+            case "m", "message", "msg" -> "message";
+            case "a", "amount" -> "amount";
+            case "time" -> "time";
+            case "reason" -> "reason";
+            case "p", "permission" -> "permission";
+            case "v", "value" -> "value";
+            case "action" -> "action";
+            case "type" -> "type";
+            case "category" -> "category";
+            case "id" -> "id";
+            // Permissions command specific flags
+            case "t", "te", "target-entity" -> "target-entity";
+            case "n", "node" -> "node";
+            case "target" -> "target";
+            default -> flag;
+        };
+    }
+    
+    /**
+     * Handle positional arguments based on the command type
+     */
+    private void handlePositionalArguments(String commandName, Map<String, String> options, List<String> positionalArgs) {
+        if (positionalArgs.isEmpty()) return;
+        
+        switch (commandName.toLowerCase()) {
+            case "pay":
+                if (positionalArgs.size() >= 2) {
+                    options.put("user", positionalArgs.get(0));
+                    options.put("amount", positionalArgs.get(1));
+                }
+                break;
+            case "ban":
+                if (positionalArgs.size() >= 1) {
+                    options.put("user", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        // Check if second arg looks like duration (contains d, h, m)
+                        String secondArg = positionalArgs.get(1);
+                        if (secondArg.matches(".*[dhm].*")) {
+                            options.put("duration", secondArg);
+                            if (positionalArgs.size() >= 3) {
+                                options.put("reason", String.join(" ", positionalArgs.subList(2, positionalArgs.size())));
+                            }
+                        } else {
+                            // Treat everything as reason
+                            options.put("reason", String.join(" ", positionalArgs.subList(1, positionalArgs.size())));
+                        }
+                    }
+                }
+                break;
+            case "kick", "warn", "mute", "timeout":
+                if (positionalArgs.size() >= 1) {
+                    options.put("user", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("reason", String.join(" ", positionalArgs.subList(1, positionalArgs.size())));
+                    }
+                }
+                break;
+            case "echo", "talkas":
+                if (positionalArgs.size() >= 1) {
+                    options.put("message", String.join(" ", positionalArgs));
+                }
+                break;
+            case "rank", "balance", "xp":
+                if (positionalArgs.size() >= 1) {
+                    options.put("user", positionalArgs.get(0));
+                }
+                break;
+            case "rules":
+                if (positionalArgs.size() >= 1) {
+                    options.put("action", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("id", positionalArgs.get(1));
+                    }
+                }
+                break;
+            case "gamble", "slots":
+                if (positionalArgs.size() >= 1) {
+                    options.put("amount", positionalArgs.get(0));
+                }
+                break;
+            case "flip":
+                if (positionalArgs.size() >= 1) {
+                    options.put("amount", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("choice", positionalArgs.get(1));
+                    }
+                }
+                break;
+            case "dice":
+                if (positionalArgs.size() >= 1) {
+                    options.put("amount", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("guess", positionalArgs.get(1));
+                    }
+                }
+                break;
+            case "purge":
+                if (positionalArgs.size() >= 1) {
+                    options.put("amount", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("user", positionalArgs.get(1));
+                    }
+                }
+                break;
+            case "automod":
+                // !automod <action> <feature> [threshold]
+                if (positionalArgs.size() >= 1) {
+                    options.put("action", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("feature", positionalArgs.get(1));
+                    }
+                    if (positionalArgs.size() >= 3) {
+                        options.put("threshold", positionalArgs.get(2));
+                    }
+                }
+                break;
+            case "ticket":
+                // !ticket <action> [reason/user]
+                if (positionalArgs.size() >= 1) {
+                    options.put("action", positionalArgs.get(0));
+                    if (positionalArgs.size() >= 2) {
+                        options.put("reason", String.join(" ", positionalArgs.subList(1, positionalArgs.size())));
+                    }
+                }
+                break;
+            default:
+                // For other commands, put the first positional arg as "target"
+                if (positionalArgs.size() >= 1) {
+                    options.put("target", positionalArgs.get(0));
+                }
+                break;
+        }
+    }
+    
+    // Command implementations that replicate slash command logic
+    
+    private void handleWorkCommand(MessageReceivedEvent event) {
+        try {
+            Guild guild = event.getGuild();
+            User user = event.getAuthor();
+            String guildId = guild.getId();
+            String userId = user.getId();
+            
+            // Get guild settings to determine work rewards
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guildId);
+            int minReward = (Integer) guildSettings.getOrDefault("economy.workRewardMin", 10);
+            int maxReward = (Integer) guildSettings.getOrDefault("economy.workRewardMax", 50);
+            
+            // Generate random reward
+            int reward = new Random().nextInt(maxReward - minReward + 1) + minReward;
+            
+            // Add money to user's balance
+            long currentBalance = ServerBot.getStorageManager().getBalance(guildId, userId);
+            ServerBot.getStorageManager().setBalance(guildId, userId, currentBalance + reward);
+            
+            // Send success message
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                "💼 Work Complete!",
+                String.format("You worked hard and earned **%d** coins!\n**New Balance:** %d coins", 
+                    reward, currentBalance + reward)
+            )).queue();
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Work Error",
+                "Failed to process work command: " + e.getMessage()
+            )).queue();
+        }
+    }
+    
+    private void handlePingCommand(MessageReceivedEvent event) {
+        long startTime = System.currentTimeMillis();
+        
+        event.getChannel().sendMessage("🏓 Pinging...").queue(message -> {
+            long endTime = System.currentTimeMillis();
+            long messageLatency = endTime - startTime;
+            long apiLatency = event.getJDA().getGatewayPing();
+            
+            message.editMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "🏓 Pong!",
+                String.format("**Message Latency:** %dms\n**API Latency:** %dms", 
+                    messageLatency, apiLatency)
+            )).queue();
+        });
+    }
+    
+    private void handleBalanceCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            Guild guild = event.getGuild();
+            User targetUser = event.getAuthor();
+            
+            // Check if a user was specified
+            String userArg = options.get("user");
+            if (userArg != null) {
+                Matcher matcher = USER_MENTION.matcher(userArg);
+                if (matcher.matches()) {
+                    String userId = matcher.group(1);
+                    User user = event.getJDA().getUserById(userId);
+                    if (user != null) {
+                        targetUser = user;
+                    }
+                }
+            }
+            
+            String guildId = guild.getId();
+            String userId = targetUser.getId();
+            
+            long balance = ServerBot.getStorageManager().getBalance(guildId, userId);
+            
+            // Get currency symbol from guild settings
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guildId);
+            String currencyName = (String) guildSettings.getOrDefault("economy.currencyName", "coins");
+            
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "💰 Balance",
+                String.format("**%s** has **%d** %s", targetUser.getName(), balance, currencyName)
+            )).queue();
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Balance Error",
+                "Failed to retrieve balance: " + e.getMessage()
+            )).queue();
+        }
+    }
+    
+    private void handlePayCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            Guild guild = event.getGuild();
+            User sender = event.getAuthor();
+            
+            String userArg = options.get("user");
+            String amountArg = options.get("amount");
+            
+            if (userArg == null || amountArg == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Missing Arguments",
+                    "Please provide both user and amount: `!pay @user amount`"
+                )).queue();
+                return;
+            }
+            
+            // Parse target user
+            User targetUser = null;
+            Matcher matcher = USER_MENTION.matcher(userArg);
+            if (matcher.matches()) {
+                String userId = matcher.group(1);
+                targetUser = event.getJDA().getUserById(userId);
+            }
+            
+            if (targetUser == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid User",
+                    "Please mention a valid user to pay."
+                )).queue();
+                return;
+            }
+            
+            // Parse amount
+            long amount;
+            try {
+                amount = Long.parseLong(amountArg);
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount",
+                    "Please provide a valid number for the amount."
+                )).queue();
+                return;
+            }
+            
+            if (amount <= 0) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount",
+                    "Amount must be greater than 0."
+                )).queue();
+                return;
+            }
+            
+            String guildId = guild.getId();
+            String senderId = sender.getId();
+            String targetId = targetUser.getId();
+            
+            // Check sender's balance
+            long senderBalance = ServerBot.getStorageManager().getBalance(guildId, senderId);
+            if (senderBalance < amount) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Funds",
+                    String.format("You don't have enough coins. You have %d, but need %d.", 
+                        senderBalance, amount)
+                )).queue();
+                return;
+            }
+            
+            // Perform the transaction
+            ServerBot.getStorageManager().setBalance(guildId, senderId, senderBalance - amount);
+            long targetBalance = ServerBot.getStorageManager().getBalance(guildId, targetId);
+            ServerBot.getStorageManager().setBalance(guildId, targetId, targetBalance + amount);
+            
+            // Get currency info
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guildId);
+            String currencyName = (String) guildSettings.getOrDefault("economy.currencyName", "coins");
+            
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                "💸 Payment Successful",
+                String.format("**%s** paid **%s** %d %s\n\n**Your new balance:** %d %s", 
+                    sender.getName(), targetUser.getName(), amount, currencyName,
+                    senderBalance - amount, currencyName)
+            )).queue();
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Payment Error",
+                "Failed to process payment: " + e.getMessage()
+            )).queue();
+        }
+    }
+    
+    private void handleBaltopCommand(MessageReceivedEvent event) {
+        try {
+            // For now, show a placeholder message since we need to check the storage manager interface
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "💰 Balance Leaderboard",
+                "The `!baltop` command shows the top user balances.\nThis uses the same logic as `/baltop`."
+            )).queue();
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Leaderboard Error",
+                "Failed to retrieve balance leaderboard: " + e.getMessage()
+            )).queue();
+        }
+    }
+    
+    // Simple implementations for other commands
+    private void handleHelpCommand(MessageReceivedEvent event, Map<String, String> options) {
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+            "📚 Help",
+            "**Prefix Commands:**\n" +
+            "• `!work` - Earn money by working\n" +
+            "• `!balance [user]` - Check balance\n" +
+            "• `!pay @user amount` - Send money to another user\n" +
+            "• `!baltop` - View balance leaderboard\n" +
+            "• `!ping` - Check bot latency\n" +
+            "• `!help` - Show this help message\n\n" +
+            "**Note:** All prefix commands (`!command`) use the same logic as slash commands (`/command`)"
+        )).queue();
+    }
+    
+    private void handleRankCommand(MessageReceivedEvent event, Map<String, String> options) {
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+            "📊 Rank Command",
+            "The `!rank` command shows user level/XP information.\nThis uses the same logic as `/rank`."
+        )).queue();
+    }
+    
+    private void handleLeaderboardCommand(MessageReceivedEvent event) {
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+            "🏆 Leaderboard Command",
+            "The `!leaderboard` command shows the XP leaderboard.\nThis uses the same logic as `/leaderboard`."
+        )).queue();
+    }
+    
+    private void handleEchoCommand(MessageReceivedEvent event, Map<String, String> options) {
+        String message = options.get("message");
+        if (message == null || message.trim().isEmpty()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Message",
+                "Please provide a message to echo: `!echo your message here`"
+            )).queue();
+            return;
+        }
+        
+        // Check message length (Discord's limit is 2000 characters)
+        if (message.length() > 2000) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Message Too Long", 
+                CustomEmojis.ERROR + " Message too long! The maximum length is 2000 characters. Your message is " + message.length() + " characters."
+            )).queue();
+            return;
+        }
+        
+        event.getChannel().sendMessage(message).queue();
+    }
+    
+    private void handleTalkAsCommand(MessageReceivedEvent event, Map<String, String> options) {
+        String message = options.get("message");
+        if (message == null || message.trim().isEmpty()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Message",
+                "Please provide a message to send: `!talkas your message here`"
+            )).queue();
+            return;
+        }
+        
+        // Check message length (Discord's limit is 2000 characters)
+        if (message.length() > 2000) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Message Too Long", 
+                CustomEmojis.ERROR + " Message too long! The maximum length is 2000 characters. Your message is " + message.length() + " characters."
+            )).queue();
+            return;
+        }
+        
+        // Delete the original command message
+        event.getMessage().delete().queue();
+        
+        // Send the message as if the bot said it
+        event.getChannel().sendMessage(message).queue();
+    }
+
+    /**
+     * Handle permissions command with prefix syntax
+     */
+    private void handlePermissionsCommand(MessageReceivedEvent event, Map<String, String> options) {
+        if (!event.isFromGuild()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Guild Only", "This command can only be used in servers."
+            )).queue();
+            return;
+        }
+
+        Member member = event.getMember();
+        if (!PermissionManager.hasPermission(member, "admin.permissions")) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Insufficient Permissions", "You need the `admin.permissions` permission to use this command."
+            )).queue();
+            return;
+        }
+
+        // Check for special commands first
+        String target = options.get("target");
+        if ("list-nodes".equals(target)) {
+            handleListNodesPrefix(event);
+            return;
+        } else if ("check".equals(target)) {
+            handleCheckPermissionsPrefix(event, options);
+            return;
+        }
+
+        // Check if no arguments provided - show help
+        String targetEntity = options.get("target-entity");
+        String action = options.get("action");
+        
+        if (targetEntity == null && action == null) {
+            showPermissionsHelpPrefix(event);
+            return;
+        }
+
+        if (targetEntity == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Target [100]", 
+                "Please specify a target entity.\n" +
+                "Usage: `!permissions -t @user -a view` or `!permissions help`\n" +
+                "Error Code: **100** - Missing Target Parameter"
+            )).queue();
+            return;
+        }
+
+        action = action != null ? action : "view";
+
+        // Try to parse target entity
+        if (targetEntity.startsWith("<@") && targetEntity.endsWith(">")) {
+            if (targetEntity.startsWith("<@&")) {
+                // It's a role mention
+                String roleId = targetEntity.replaceAll("[<@&>]", "");
+                try {
+                    Role targetRole = event.getGuild().getRoleById(roleId);
+                    if (targetRole == null) {
+                        event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                            "Role Not Found", "The specified role was not found."
+                        )).queue();
+                        return;
+                    }
+                    handleRolePermissionsPrefix(event, targetRole, action, options);
+                } catch (NumberFormatException e) {
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                        "Invalid Role", "Please mention a valid role."
+                    )).queue();
+                }
+            } else {
+                // It's a user mention
+                String userId = targetEntity.replaceAll("[<@!>]", "");
+                try {
+                    Member targetMember = event.getGuild().getMemberById(userId);
+                    if (targetMember == null) {
+                        event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                            "User Not Found [301]", 
+                            "The specified user is not a member of this server.\n" +
+                            "Error Code: **301** - Target Not Found"
+                        )).queue();
+                        return;
+                    }
+                    handleUserPermissionsPrefix(event, targetMember, action, options);
+                } catch (NumberFormatException e) {
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                        "Invalid User", "Please mention a valid user."
+                    )).queue();
+                }
+            }
+        } else if ("@everyone".equals(targetEntity) || "everyone".equalsIgnoreCase(targetEntity) || "e".equalsIgnoreCase(targetEntity)) {
+            // Handle @everyone role (including "everyone" and "e" as alternatives to avoid pinging)
+            Role everyoneRole = event.getGuild().getPublicRole();
+            handleRolePermissionsPrefix(event, everyoneRole, action, options);
+        } else {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Invalid Target", 
+                "Please specify a valid target:\n" +
+                "• User mention: `@username` (e.g., `<@123456789>`)\n" +
+                "• Role mention: `@rolename` (e.g., `<@&987654321>`)\n" +
+                "• Everyone: `@everyone`, `everyone`, or `e`"
+            )).queue();
+        }
+    }
+
+    private void showPermissionsHelpPrefix(MessageReceivedEvent event) {
+        // Delete the original command message
+        event.getMessage().delete().queue();
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle(CustomEmojis.INFO + "Permissions Command Help (Prefix)")
+                .setDescription("Permissions management via prefix commands\n\n**Original command:** `" + event.getMessage().getContentRaw() + "`")
+                .addField("**Set Permissions**", 
+                    "```!permissions -t @user -a set -n mod.ban -v true```\n" +
+                    "```!permissions -t @role -a set -n economy.admin -v false```\n" +
+                    "```!permissions -t everyone -a set -n levels.use -v true```", false)
+                .addField("**View Permissions**", 
+                    "```!permissions -t @user -a view```\n" +
+                    "```!permissions -t @role -a view```\n" +
+                    "```!permissions -a view``` - View your own permissions", false)
+                .addField("**Remove Permissions**", 
+                    "```!permissions -t @user -a remove -n mod.ban```\n" +
+                    "```!permissions -t @role -a remove -n economy.admin```", false)
+                .addField("**Utility Commands**", 
+                    "```!permissions -target list-nodes``` - List all available permission nodes\n" +
+                    "```!permissions -target check -t @user -n mod.ban``` - Check if user has permission", false)
+                .addField("**Flag Reference**", 
+                    "`-t` = target (user/role/everyone), `-a` = action, `-n` = node, `-v` = value", false)
+                .addField("**Target Options**", 
+                    "• `@user` - Discord mention (e.g., `<@123456789>`)\n• `@role` - Role mention (e.g., `<@&987654321>`)\n• `everyone` or `e` - @everyone (no ping)", false);
+
+        Button dismissButton = Button.secondary("dismiss_help", "Dismiss");
+        
+        event.getChannel().sendMessageEmbeds(embed.build())
+                .setActionRow(dismissButton)
+                .queue();
+    }
+
+    private void handleListNodesPrefix(MessageReceivedEvent event) {
+        // Delete the original command message
+        event.getMessage().delete().queue();
+        
+        // This would call the actual list nodes logic from PermissionsCommand
+        // For now, show a basic list
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle("📋 Available Permission Nodes")
+                .setDescription("**Original command:** `" + event.getMessage().getContentRaw() + "`")
+                .addField("**Moderation**", "mod.ban, mod.kick, mod.mute, mod.warn, mod.timeout", false)
+                .addField("**Economy**", "economy.use, economy.admin, economy.pay, economy.work", false)
+                .addField("**Levels**", "levels.use, levels.admin", false)
+                .addField("**Admin**", "admin.permissions, admin.config, admin.server", false)
+                .addField("**Utility**", "utility.ping, utility.help, utility.echo", false)
+                .setFooter("Use wildcards like 'mod.*' for all moderation permissions");
+
+        Button dismissButton = Button.secondary("dismiss_help", "Dismiss");
+        
+        event.getChannel().sendMessageEmbeds(embed.build())
+                .setActionRow(dismissButton)
+                .queue();
+    }
+
+    private void handleCheckPermissionsPrefix(MessageReceivedEvent event, Map<String, String> options) {
+        String targetEntity = options.get("target-entity");
+        String node = options.get("node");
+        
+        if (targetEntity == null || node == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Parameters", 
+                "Usage: `!permissions -target check -t @user -n permission.node`"
+            )).queue();
+            return;
+        }
+
+        // Parse target entity and check permission
+        if (targetEntity.startsWith("<@") && targetEntity.endsWith(">")) {
+            String userId = targetEntity.replaceAll("[<@!>]", "");
+            try {
+                Member targetMember = event.getGuild().getMemberById(userId);
+                if (targetMember == null) {
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                        "User Not Found", "The specified user is not a member of this server."
+                    )).queue();
+                    return;
+                }
+                
+                boolean hasPermission = PermissionManager.hasPermission(targetMember, node);
+                EmbedBuilder embed = EmbedUtils.createEmbedBuilder(hasPermission ? EmbedUtils.SUCCESS_COLOR : EmbedUtils.ERROR_COLOR)
+                        .setTitle(CustomEmojis.SEARCH + " Permission Check")
+                        .addField("User", targetMember.getAsMention(), true)
+                        .addField("Permission", "`" + node + "`", true)
+                        .addField("Has Permission", hasPermission ? CustomEmojis.SUCCESS + " Yes" : CustomEmojis.ERROR + " No", true);
+                
+                event.getChannel().sendMessageEmbeds(embed.build()).queue();
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid User", "Please mention a valid user."
+                )).queue();
+            }
+        } else {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Invalid Target", "Please mention a valid user for permission check."
+            )).queue();
+        }
+    }
+
+    private void handleUserPermissionsPrefix(MessageReceivedEvent event, Member targetMember, String action, Map<String, String> options) {
+        switch (action) {
+            case "view" -> viewUserPermissionsPrefix(event, targetMember);
+            case "set" -> setUserPermissionPrefix(event, targetMember, options);
+            case "remove" -> removeUserPermissionPrefix(event, targetMember, options);
+            default -> event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Invalid Action", "Valid actions: view, set, remove"
+            )).queue();
+        }
+    }
+
+    private void handleRolePermissionsPrefix(MessageReceivedEvent event, Role targetRole, String action, Map<String, String> options) {
+        switch (action) {
+            case "view" -> viewRolePermissionsPrefix(event, targetRole);
+            case "set" -> setRolePermissionPrefix(event, targetRole, options);
+            case "remove" -> removeRolePermissionPrefix(event, targetRole, options);
+            default -> event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Invalid Action", "Valid actions: view, set, remove"
+            )).queue();
+        }
+    }
+
+    private void viewUserPermissionsPrefix(MessageReceivedEvent event, Member targetMember) {
+        Map<String, Boolean> userPermissions = PermissionManager.getUserPermissions(event.getGuild().getId(), targetMember.getId());
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle("👤 User Permissions: " + targetMember.getEffectiveName())
+                .setThumbnail(targetMember.getEffectiveAvatarUrl());
+        
+        if (userPermissions.isEmpty()) {
+            embed.addField("Direct Permissions", "No direct permissions set", false);
+        } else {
+            StringBuilder directPerms = new StringBuilder();
+            for (Map.Entry<String, Boolean> entry : userPermissions.entrySet()) {
+                String status = entry.getValue() ? CustomEmojis.SUCCESS : CustomEmojis.ERROR;
+                directPerms.append(status).append(" `").append(entry.getKey()).append("`\n");
+            }
+            embed.addField("Direct Permissions", directPerms.toString(), false);
+        }
+        
+        // Show permission count
+        int allowCount = (int) userPermissions.values().stream().filter(v -> v).count();
+        int denyCount = userPermissions.size() - allowCount;
+        if (userPermissions.size() > 0) {
+            embed.addField("Summary", 
+                String.format(CustomEmojis.SUCCESS + " %d allowed • " + CustomEmojis.ERROR + " %d denied", allowCount, denyCount), false);
+        }
+        
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    private void viewRolePermissionsPrefix(MessageReceivedEvent event, Role targetRole) {
+        Map<String, Boolean> permissions = PermissionManager.getRolePermissions(event.getGuild().getId(), targetRole.getId());
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle("🎭 Role Permissions: " + targetRole.getName())
+                .setColor(targetRole.getColor());
+        
+        if (permissions.isEmpty()) {
+            embed.addField("Permissions", "No permissions set for this role", false);
+        } else {
+            StringBuilder rolePerms = new StringBuilder();
+            for (Map.Entry<String, Boolean> entry : permissions.entrySet()) {
+                String status = entry.getValue() ? CustomEmojis.SUCCESS : CustomEmojis.ERROR;
+                rolePerms.append(status).append(" `").append(entry.getKey()).append("`\n");
+            }
+            embed.addField("Permissions", rolePerms.toString(), false);
+        }
+        
+        embed.addField("Members", String.valueOf(targetRole.getGuild().getMembersWithRoles(targetRole).size()), true);
+        
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    private void setUserPermissionPrefix(MessageReceivedEvent event, Member targetMember, Map<String, String> options) {
+        String node = options.get("node");
+        String value = options.get("value");
+        
+        if (node == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Permission Node", 
+                "Usage: `!permissions -t @user -a set -n permission.node -v true`"
+            )).queue();
+            return;
+        }
+        
+        boolean granted = value == null || "true".equalsIgnoreCase(value) || "allow".equalsIgnoreCase(value);
+        
+        PermissionManager.setUserPermission(event.getGuild().getId(), targetMember.getId(), node, granted);
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.SUCCESS_COLOR)
+                .setTitle(CustomEmojis.SUCCESS + " Permission Updated")
+                .addField("User", targetMember.getAsMention(), true)
+                .addField("Permission", "`" + node + "`", true)
+                .addField("Action", granted ? CustomEmojis.SUCCESS + " Granted" : CustomEmojis.ERROR + " Denied", true);
+        
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    private void setRolePermissionPrefix(MessageReceivedEvent event, Role targetRole, Map<String, String> options) {
+        String node = options.get("node");
+        String value = options.get("value");
+        
+        if (node == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Permission Node", 
+                "Usage: `!permissions -t @role -a set -n permission.node -v true`"
+            )).queue();
+            return;
+        }
+        
+        boolean granted = value == null || "true".equalsIgnoreCase(value) || "allow".equalsIgnoreCase(value);
+        
+        PermissionManager.setRolePermission(event.getGuild().getId(), targetRole.getId(), node, granted);
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.SUCCESS_COLOR)
+                .setTitle(CustomEmojis.SUCCESS + "Permission Updated")
+                .addField("Role", targetRole.getAsMention(), true)
+                .addField("Permission", "`" + node + "`", true)
+                .addField("Action", granted ? CustomEmojis.SUCCESS + "Granted" : CustomEmojis.ERROR + "Denied", true);
+        
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    private void removeUserPermissionPrefix(MessageReceivedEvent event, Member targetMember, Map<String, String> options) {
+        String node = options.get("node");
+        
+        if (node == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Permission Node", 
+                "Usage: `!permissions -t @user -a remove -n permission.node`"
+            )).queue();
+            return;
+        }
+        
+        PermissionManager.removeUserPermission(event.getGuild().getId(), targetMember.getId(), node);
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.SUCCESS_COLOR)
+                .setTitle(CustomEmojis.TRASH + " Permission Removed")
+                .addField("User", targetMember.getAsMention(), true)
+                .addField("Permission", "`" + node + "`", true)
+                .addField("Action", "Removed", true);
+        
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    private void removeRolePermissionPrefix(MessageReceivedEvent event, Role targetRole, Map<String, String> options) {
+        String node = options.get("node");
+        
+        if (node == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Permission Node", 
+                "Usage: `!permissions -t @role -a remove -n permission.node`"
+            )).queue();
+            return;
+        }
+        
+        PermissionManager.removeRolePermission(event.getGuild().getId(), targetRole.getId(), node);
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.SUCCESS_COLOR)
+                .setTitle(CustomEmojis.TRASH + " Permission Removed")
+                .addField("Role", targetRole.getAsMention(), true)
+                .addField("Permission", "`" + node + "`", true)
+                .addField("Action", "Removed", true);
+        
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    /**
+     * Handle warn command with prefix syntax
+     */
+    private void handleWarnCommand(MessageReceivedEvent event, Map<String, String> options) {
+        if (!event.isFromGuild()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Guild Only", "This command can only be used in servers.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        Member moderator = event.getMember();
+        if (!PermissionManager.hasPermission(moderator, "mod.warn")) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Insufficient Permissions", "You need the `mod.warn` permission to use this command.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        // Parse user mention from arguments
+        String userArg = options.get("user");
+        if (userArg == null || userArg.trim().isEmpty()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Missing User", "Please mention a user to warn: `!warn @user [reason]`",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        // Parse user mention
+        User targetUser = null;
+        if (userArg.startsWith("<@") && userArg.endsWith(">")) {
+            String userId = userArg.replaceAll("[<@!>]", "");
+            try {
+                targetUser = event.getJDA().getUserById(userId);
+            } catch (NumberFormatException e) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Invalid User", "Please mention a valid user.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+        }
+
+        if (targetUser == null) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "User Not Found", "Could not find the specified user.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        Member targetMember = event.getGuild().getMember(targetUser);
+        if (targetMember == null) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "User Not Found", "This user is not in the server!",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        if (targetUser.isBot()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Invalid Target", "You cannot warn bots!",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        // Check if the moderator can interact with the target
+        if (!canInteractWith(moderator, targetMember)) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Cannot Warn", "You cannot warn this user due to role hierarchy!",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        String reason = options.get("reason");
+        if (reason == null || reason.trim().isEmpty()) {
+            reason = "No reason provided";
+        }
+
+        // Add the warning
+        String guildId = event.getGuild().getId();
+        String userId = targetUser.getId();
+        String moderatorId = event.getAuthor().getId();
+
+        ServerBot.getStorageManager().addWarning(guildId, userId, reason, moderatorId);
+        int warningCount = ServerBot.getStorageManager().getWarningCount(guildId, userId);
+
+        String description = String.format(
+            "**User:** %s (%s)\n" +
+            "**Reason:** %s\n" +
+            "**Warning Count:** %d\n" +
+            "**Moderator:** %s",
+            targetUser.getName(), targetUser.getId(),
+            reason, warningCount, event.getAuthor().getName()
+        );
+
+        DismissibleMessage.sendSuccess(event.getChannel(), "User Warned", description, event.getAuthor().getId());
+
+        // Send DM notification if configured
+        PunishmentNotificationService.getInstance().sendPunishmentNotification(
+            event.getGuild().getId(),
+            targetUser.getId(),
+            PunishmentType.WARN,
+            reason,
+            null, // No duration for warnings
+            event.getMember().getEffectiveName()
+        );
+
+        // Log to AutoLog channel
+        AutoLogUtils.logWarn(event.getGuild(), targetUser, event.getAuthor(), reason);
+    }
+
+    /**
+     * Handle ban command with prefix syntax
+     */
+    private void handleBanCommand(MessageReceivedEvent event, Map<String, String> options) {
+        if (!event.isFromGuild()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Guild Only", "This command can only be used in servers.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        Member moderator = event.getMember();
+        if (!PermissionManager.hasPermission(moderator, "mod.ban")) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Insufficient Permissions", "You need ban permissions to use this command.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        // Parse user mention
+        String userArg = options.get("user");
+        if (userArg == null || userArg.trim().isEmpty()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Missing User", "Please mention a user to ban: `!ban @user [duration] [reason]`",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        User targetUser = parseUserMention(event, userArg);
+        if (targetUser == null) return;
+
+        Member targetMember = event.getGuild().getMember(targetUser);
+
+        // Check permissions if member exists
+        if (targetMember != null) {
+            if (!canInteractWith(moderator, targetMember)) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Cannot Ban User", "You cannot ban this user due to role hierarchy.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            if (!event.getGuild().getSelfMember().canInteract(targetMember)) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Cannot Ban User", "I cannot ban this user due to role hierarchy.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+        }
+
+        String durationStr = options.get("duration");
+        final String finalReason;
+        String tempReason = options.get("reason");
+        if (tempReason == null || tempReason.trim().isEmpty()) {
+            finalReason = "No reason provided";
+        } else {
+            finalReason = tempReason;
+        }
+
+        final Duration banDuration;
+        if (durationStr != null && !durationStr.trim().isEmpty()) {
+            banDuration = TimeUtils.parseDuration(durationStr);
+            if (banDuration == null) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Invalid Duration", "Please provide a valid duration (e.g., 1d, 2h, 30m)",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+        } else {
+            banDuration = null;
+        }
+
+        // Execute ban
+        event.getGuild().ban(targetUser, 7, TimeUnit.DAYS).reason(finalReason)
+                .queue(success -> {
+                    String durationText = banDuration != null ? TimeUtils.formatDuration(banDuration) : "Permanent";
+                    DismissibleMessage.send(event.getChannel(),
+                        EmbedUtils.createModerationEmbed(
+                            "User Banned", targetUser, moderator.getUser(), finalReason + "\n**Duration:** " + durationText
+                        ),
+                        moderator.getId()
+                    );
+
+                    // Send DM notification if configured
+                    PunishmentNotificationService.getInstance().sendPunishmentNotification(
+                        event.getGuild().getId(),
+                        targetUser.getId(),
+                        PunishmentType.BAN,
+                        finalReason,
+                        banDuration,
+                        moderator.getEffectiveName()
+                    );
+                });
+    }
+
+    /**
+     * Handle kick command with prefix syntax
+     */
+    private void handleKickCommand(MessageReceivedEvent event, Map<String, String> options) {
+        if (!event.isFromGuild()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Guild Only", "This command can only be used in servers.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        Member moderator = event.getMember();
+        if (!PermissionManager.hasPermission(moderator, "mod.kick")) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Insufficient Permissions", "You need kick permissions to use this command.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        String userArg = options.get("user");
+        if (userArg == null || userArg.trim().isEmpty()) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Missing User", "Please mention a user to kick: `!kick @user [reason]`",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        User targetUser = parseUserMention(event, userArg);
+        if (targetUser == null) return;
+
+        Member targetMember = event.getGuild().getMember(targetUser);
+        if (targetMember == null) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "User Not Found", "This user is not in the server!",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        if (!canInteractWith(moderator, targetMember)) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Cannot Kick User", "You cannot kick this user due to role hierarchy.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        if (!event.getGuild().getSelfMember().canInteract(targetMember)) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Cannot Kick User", "I cannot kick this user due to role hierarchy.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        final String finalReason;
+        String tempReason = options.get("reason");
+        if (tempReason == null || tempReason.trim().isEmpty()) {
+            finalReason = "No reason provided";
+        } else {
+            finalReason = tempReason;
+        }
+
+        // Execute kick
+        event.getGuild().kick(targetMember).reason(finalReason)
+                .queue(success -> {
+                    DismissibleMessage.send(event.getChannel(),
+                        EmbedUtils.createModerationEmbed(
+                            "User Kicked", targetUser, moderator.getUser(), finalReason
+                        ),
+                        moderator.getId()
+                    );
+
+                    // Send DM notification if configured
+                    PunishmentNotificationService.getInstance().sendPunishmentNotification(
+                        event.getGuild().getId(),
+                        targetUser.getId(),
+                        PunishmentType.KICK,
+                        finalReason,
+                        null,
+                        moderator.getEffectiveName()
+                    );
+                });
+    }
+
+    /**
+     * Handle mute command with prefix syntax
+     */
+    private void handleMuteCommand(MessageReceivedEvent event, Map<String, String> options) {
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+            "Command Not Yet Implemented",
+            "The mute command for prefix usage is not yet implemented. Please use `/mute` instead."
+        )).queue();
+    }
+
+    /**
+     * Handle timeout command with prefix syntax
+     */
+    private void handleTimeoutCommand(MessageReceivedEvent event, Map<String, String> options) {
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+            "Command Not Yet Implemented",
+            "The timeout command for prefix usage is not yet implemented. Please use `/timeout` instead."
+        )).queue();
+    }
+
+    /**
+     * Handle info command with prefix syntax
+     */
+    private void handleInfoCommand(MessageReceivedEvent event, Map<String, String> options) {
+        net.dv8tion.jda.api.JDA jda = event.getJDA();
+        
+        // Get runtime information
+        long uptimeMillis = java.lang.management.ManagementFactory.getRuntimeMXBean().getUptime();
+        long uptimeSeconds = uptimeMillis / 1000;
+        String uptime = formatUptime(uptimeSeconds);
+        
+        // Get memory usage
+        Runtime runtime = Runtime.getRuntime();
+        long memoryUsed = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
+        long memoryTotal = runtime.totalMemory() / (1024 * 1024);
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle("🤖 Bot Information")
+                .setThumbnail(jda.getSelfUser().getEffectiveAvatarUrl());
+
+        // Bot Stats
+        embed.addField("📊 Bot Statistics",
+                "**Servers:** " + jda.getGuilds().size() + "\n" +
+                "**Users:** " + jda.getUsers().size() + "\n" +
+                "**Commands:** " + commandManager.getAllCommands().size(),
+                true);
+
+        // Technical Info
+        embed.addField(CustomEmojis.SETTING + " Technical Info",
+                "**Uptime:** " + uptime + "\n" +
+                "**Memory:** " + memoryUsed + "/" + memoryTotal + " MB\n" +
+                "**Java:** " + System.getProperty("java.version"),
+                true);
+
+        // Additional Info
+        embed.addField("🔗 Links",
+                "**Ping:** " + jda.getGatewayPing() + "ms\n" +
+                "**Shards:** " + (jda.getShardInfo() != null ? 
+                    (jda.getShardInfo().getShardId() + 1) + "/" + jda.getShardInfo().getShardTotal() : "1/1"),
+                true);
+
+        embed.setFooter("Bot created with JDA");
+
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    /**
+     * Format uptime into human readable string
+     */
+    private String formatUptime(long seconds) {
+        long days = seconds / 86400;
+        long hours = (seconds % 86400) / 3600;
+        long minutes = (seconds % 3600) / 60;
+        long secs = seconds % 60;
+
+        StringBuilder sb = new StringBuilder();
+        if (days > 0) sb.append(days).append("d ");
+        if (hours > 0) sb.append(hours).append("h ");
+        if (minutes > 0) sb.append(minutes).append("m ");
+        sb.append(secs).append("s");
+
+        return sb.toString();
+    }
+
+    /**
+     * Handle serverinfo command with prefix syntax
+     */
+    private void handleServerInfoCommand(MessageReceivedEvent event, Map<String, String> options) {
+        if (!event.isFromGuild()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Guild Only", "This command can only be used in servers."
+            )).queue();
+            return;
+        }
+
+        Guild guild = event.getGuild();
+        
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle("🏠 Server Information")
+                .setThumbnail(guild.getIconUrl());
+
+        // Basic Server Info
+        embed.addField("📊 Server Stats",
+                "**Name:** " + guild.getName() + "\n" +
+                "**ID:** " + guild.getId() + "\n" +
+                "**Owner:** " + guild.getOwner().getAsMention() + "\n" +
+                "**Created:** <t:" + guild.getTimeCreated().toEpochSecond() + ":R>",
+                true);
+
+        // Member Info
+        long totalMembers = guild.getMemberCount();
+        long bots = guild.getMembers().stream().mapToLong(m -> m.getUser().isBot() ? 1 : 0).sum();
+        long humans = totalMembers - bots;
+
+        embed.addField("👥 Members",
+                "**Total:** " + totalMembers + "\n" +
+                "**Humans:** " + humans + "\n" +
+                "**Bots:** " + bots,
+                true);
+
+        // Channel Info
+        embed.addField(CustomEmojis.NOTE + " Channels",
+                "**Text:** " + guild.getTextChannels().size() + "\n" +
+                "**Voice:** " + guild.getVoiceChannels().size() + "\n" +
+                "**Categories:** " + guild.getCategories().size() + "\n" +
+                "**Total:** " + guild.getChannels().size(),
+                true);
+
+        // Role Info
+        embed.addField("🎭 Other",
+                "**Roles:** " + guild.getRoles().size() + "\n" +
+                "**Emojis:** " + guild.getEmojis().size() + "\n" +
+                "**Boosts:** " + guild.getBoostCount() + "\n" +
+                "**Boost Tier:** " + guild.getBoostTier(),
+                true);
+
+        if (guild.getDescription() != null) {
+            embed.addField("📄 Description", guild.getDescription(), false);
+        }
+
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    /**
+     * Handle xp command with prefix syntax
+     */
+    private void handleXpCommand(MessageReceivedEvent event, Map<String, String> options) {
+        if (!event.isFromGuild()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Guild Only", "This command can only be used in servers."
+            )).queue();
+            return;
+        }
+
+        // Check if target user is specified
+        String userArg = options.get("user");
+        User targetUser;
+        
+        if (userArg != null && !userArg.trim().isEmpty()) {
+            targetUser = parseUserMention(event, userArg);
+            if (targetUser == null) return;
+        } else {
+            targetUser = event.getAuthor();
+        }
+
+        String guildId = event.getGuild().getId();
+        String userId = targetUser.getId();
+        
+        // Get XP data from storage
+        long currentXp = ServerBot.getStorageManager().getExperience(guildId, userId);
+        int currentLevel = calculateLevel(currentXp);
+        long xpForCurrentLevel = calculateXpForLevel(currentLevel);
+        long xpForNextLevel = calculateXpForLevel(currentLevel + 1);
+        long xpProgress = currentXp - xpForCurrentLevel;
+        long xpNeeded = xpForNextLevel - xpForCurrentLevel;
+
+        // Create progress bar
+        String progressBar = createProgressBar(xpProgress, xpNeeded);
+
+        EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                .setTitle("📈 XP Information")
+                .setThumbnail(targetUser.getEffectiveAvatarUrl());
+
+        embed.addField("User", targetUser.getAsMention(), true);
+        embed.addField("Level", String.valueOf(currentLevel), true);
+        embed.addField("Total XP", String.valueOf(currentXp), true);
+
+        embed.addField("Progress to Level " + (currentLevel + 1),
+                progressBar + "\n" + xpProgress + " / " + xpNeeded + " XP", false);
+
+        event.getChannel().sendMessageEmbeds(embed.build()).queue();
+    }
+
+    /**
+     * Calculate level from XP
+     */
+    private int calculateLevel(long xp) {
+        // Simple level calculation: level = sqrt(xp / 100)
+        return (int) Math.floor(Math.sqrt(xp / 100.0));
+    }
+
+    /**
+     * Calculate XP needed for a specific level
+     */
+    private long calculateXpForLevel(int level) {
+        return level * level * 100L;
+    }
+
+    /**
+     * Create a progress bar string
+     */
+    private String createProgressBar(long current, long max) {
+        int barLength = 20;
+        int progress = (int) ((double) current / max * barLength);
+        
+        StringBuilder bar = new StringBuilder("[");
+        for (int i = 0; i < barLength; i++) {
+            if (i < progress) {
+                bar.append("█");
+            } else {
+                bar.append("░");
+            }
+        }
+        bar.append("]");
+        
+        int percentage = (int) ((double) current / max * 100);
+        bar.append(" ").append(percentage).append("%");
+        
+        return bar.toString();
+    }
+
+    /**
+     * Parse user mention from string
+     */
+    private User parseUserMention(MessageReceivedEvent event, String userArg) {
+        if (userArg.startsWith("<@") && userArg.endsWith(">")) {
+            String userId = userArg.replaceAll("[<@!>]", "");
+            try {
+                return event.getJDA().getUserById(userId);
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid User", "Please mention a valid user."
+                )).queue();
+                return null;
+            }
+        } else {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Invalid User", "Please mention a valid user."
+            )).queue();
+            return null;
+        }
+    }
+
+    /**
+     * Check if moderator can interact with target member
+     */
+    private boolean canInteractWith(Member moderator, Member target) {
+        return moderator.canInteract(target);
+    }
+
+    /**
+     * Handle daily command with prefix syntax
+     */
+    private void handleDailyCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            // Check basic requirements that would be in the slash command
+            if (!event.isFromGuild()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Guild Only", "This command can only be used in servers."
+                )).queue();
+                return;
+            }
+
+            // Since we can't easily create a SlashCommandInteractionEvent, we'll implement the logic directly
+            String guildId = event.getGuild().getId();
+            String userId = event.getAuthor().getId();
+            
+            // Get guild settings
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guildId);
+            
+            // Check if economy is enabled
+            Boolean economyEnabled = (Boolean) guildSettings.get("enableEconomy");
+            if (economyEnabled == null || !economyEnabled) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Economy Disabled", "The economy system is disabled in this server."
+                )).queue();
+                return;
+            }
+
+            // Get daily reward amount from settings
+            Object dailyRewardSetting = guildSettings.get("economy.dailyReward");
+            int dailyReward = 100; // Default value
+            if (dailyRewardSetting != null) {
+                if (dailyRewardSetting instanceof Number) {
+                    dailyReward = ((Number) dailyRewardSetting).intValue();
+                }
+            }
+
+            // Check if user has already claimed today
+            String lastClaimKey = "daily_last_claim_" + userId;
+            Object lastClaimObj = guildSettings.get(lastClaimKey);
+            
+            LocalDate today = LocalDate.now(ZoneId.systemDefault());
+            LocalDate lastClaim = null;
+            
+            if (lastClaimObj != null) {
+                try {
+                    lastClaim = LocalDate.parse(lastClaimObj.toString());
+                } catch (Exception e) {
+                    // Ignore parsing errors, treat as no previous claim
+                }
+            }
+            
+            if (lastClaim != null && lastClaim.equals(today)) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Already Claimed", "You have already claimed your daily reward today! Come back tomorrow."
+                )).queue();
+                return;
+            }
+
+            // Calculate streak and bonus
+            String streakKey = "daily_streak_" + userId;
+            Object streakObj = guildSettings.get(streakKey);
+            int currentStreak = 0;
+            
+            if (streakObj != null) {
+                try {
+                    currentStreak = Integer.parseInt(streakObj.toString());
+                } catch (NumberFormatException e) {
+                    currentStreak = 0;
+                }
+            }
+            
+            // Check if streak continues (yesterday was last claim)
+            if (lastClaim != null && lastClaim.equals(today.minusDays(1))) {
+                currentStreak++;
+            } else if (lastClaim == null || !lastClaim.equals(today.minusDays(1))) {
+                currentStreak = 1; // Start new streak
+            }
+
+            // Calculate bonus (10% per day, max 100% at 10 days)
+            double bonusMultiplier = 1.0 + Math.min(currentStreak * 0.1, 1.0);
+            int totalReward = (int) (dailyReward * bonusMultiplier);
+            
+            // Add random bonus (±20%)
+            Random random = new Random();
+            double randomMultiplier = 0.8 + (random.nextDouble() * 0.4); // 0.8 to 1.2
+            totalReward = (int) (totalReward * randomMultiplier);
+
+            // Update user data
+            ServerBot.getStorageManager().updateGuildSettings(guildId, lastClaimKey, today.toString());
+            ServerBot.getStorageManager().updateGuildSettings(guildId, streakKey, String.valueOf(currentStreak));
+            
+            // Add to balance
+            long currentBalance = ServerBot.getStorageManager().getBalance(guildId, userId);
+            ServerBot.getStorageManager().setBalance(guildId, userId, currentBalance + totalReward);
+
+            // Get currency name
+            String currencyName = (String) guildSettings.getOrDefault("economy.currencyName", "coins");
+
+            // Send success message
+            EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.SUCCESS_COLOR)
+                    .setTitle("💰 Daily Reward Claimed!")
+                    .setDescription(String.format("You received **%d** %s!", totalReward, currencyName))
+                    .addField("🔥 Streak", String.valueOf(currentStreak), true)
+                    .addField("💎 Bonus", String.format("%.0f%%", (bonusMultiplier - 1) * 100), true)
+                    .addField("Balance", String.format("%d %s", currentBalance + totalReward, currencyName), true);
+
+            event.getChannel().sendMessageEmbeds(embed.build()).queue();
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Daily Error",
+                "Failed to process daily command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    /**
+     * Handle error command with prefix syntax
+     */
+    private void handleErrorCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String category = options.get("category");
+            
+            if (category == null) {
+                // Show error code overview
+                EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR)
+                        .setTitle("🚨 Error Code Documentation")
+                        .setDescription("Use `!error <category>` to see specific error codes.")
+                        .addField("📚 Available Categories", 
+                                "**A** - Authentication & Access\n" +
+                                "**B** - Bot Configuration\n" +
+                                "**C** - Command & Communication\n" +
+                                "**D** - Database & Data\n" +
+                                "**E** - Economy & Exchange\n" +
+                                "**F** - File & Form\n" +
+                                "**G** - Guild & General\n" +
+                                "**H** - Help & Handler\n" +
+                                "**I** - Integration & Input\n" +
+                                "**J** - JSON & Joining\n" +
+                                "**K** - Kernel & Key\n" +
+                                "**L** - Logging & Limit\n" +
+                                "**M** - Moderation & Member\n" +
+                                "**N** - Network & Notification\n" +
+                                "**O** - Operation & Output\n" +
+                                "**P** - Permission & Process", false);
+                
+                event.getChannel().sendMessageEmbeds(embed.build()).queue();
+            } else {
+                // Show specific category - redirect to new /error command
+                EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.INFO_COLOR);
+                
+                switch (category.toUpperCase()) {
+                    case "A" -> {
+                        embed.setTitle("🚨 Error Code System Updated")
+                                .setDescription("The error code system has been updated to a new 3-digit numeric format.\n\n" +
+                                    "Please use `/error category:1` for Input/Validation errors (1XX)\n" +
+                                    "Or `/error category:2` for Permission/Access errors (2XX)")
+                                .addField("New System", "All error codes now use 3-digit numbers organized by category.", false);
+                    }
+                    case "B" -> {
+                        embed.setTitle("🚨 Error Code System Updated")
+                                .setDescription("The error code system has been updated to a new 3-digit numeric format.\n\n" +
+                                    "Please use `/error category:6` for Configuration errors (6XX)")
+                                .addField("New System", "All error codes now use 3-digit numbers organized by category.", false);
+                    }
+                    case "C" -> {
+                        embed.setTitle("🚨 Error Code System Updated")
+                                .setDescription("The error code system has been updated to a new 3-digit numeric format.\n\n" +
+                                    "Please use `/error category:4` for Operation errors (4XX)")
+                                .addField("New System", "All error codes now use 3-digit numbers organized by category.", false);
+                    }
+                    case "D" -> {
+                        embed.setTitle("🚨 Error Code System Updated")
+                                .setDescription("The error code system has been updated to a new 3-digit numeric format.\n\n" +
+                                    "Please use `/error category:5` for System/Database errors (5XX)")
+                                .addField("New System", "All error codes now use 3-digit numbers organized by category.", false);
+                    }
+                    case "E" -> {
+                        embed.setTitle("🚨 Error Code System Updated")
+                                .setDescription("The error code system has been updated to a new 3-digit numeric format.\n\n" +
+                                    "Please use `/error` to see all available error categories.")
+                                .addField("New System", "All error codes now use 3-digit numbers organized by category.", false);
+                    }
+                    default -> {
+                        embed.setTitle(CustomEmojis.ERROR + " Unknown Category")
+                                .setDescription("Error category '" + category + "' not found.\n\n" +
+                                    "Use `/error` to see all available categories in the new 3-digit system.");
+                    }
+                }
+                
+                event.getChannel().sendMessageEmbeds(embed.build()).queue();
+            }
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Error Command Error",
+                "Failed to process error command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    /**
+     * Handle unban command with prefix syntax
+     */
+    private void handleUnbanCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            if (!event.isFromGuild()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Guild Only", "This command can only be used in servers."
+                )).queue();
+                return;
+            }
+
+            // Check permissions
+            Member member = event.getMember();
+            if (!PermissionManager.hasPermission(member, "moderation.unban")) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Permissions", "You don't have permission to use the unban command!"
+                )).setComponents().queue();
+                return;
+            }
+
+            String userArg = options.get("user");
+            if (userArg == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Missing Arguments", "Please specify a user to unban."
+                )).queue();
+                return;
+            }
+
+            // Parse user ID from mention or direct ID
+            String userId = userArg.replaceAll("[<@!>]", "");
+            
+            try {
+                Guild guild = event.getGuild();
+                User targetUser = event.getJDA().getUserById(userId);
+                
+                if (targetUser == null) {
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                        "User Not Found", "Could not find the specified user."
+                    )).queue();
+                    return;
+                }
+
+                // Check if user is actually banned
+                guild.retrieveBanList().queue(bans -> {
+                    boolean isBanned = bans.stream().anyMatch(ban -> ban.getUser().getId().equals(userId));
+                    
+                    if (!isBanned) {
+                        event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                            "Not Banned", "This user is not banned from the server."
+                        )).queue();
+                        return;
+                    }
+
+                    // Unban the user
+                    guild.unban(targetUser).queue(
+                        success -> {
+                            // Log the action
+                            AutoLogUtils.logUnban(guild, targetUser, event.getAuthor(), "Unbanned via prefix command");
+
+                            // Remove from storage - we'll use temp punishments instead
+                            ServerBot.getStorageManager().removeTempPunishment("ban_" + guild.getId() + "_" + userId);
+
+                            // Send success message
+                            event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                                "User Unbanned", 
+                                String.format("Successfully unbanned **%s**", targetUser.getName())
+                            )).queue();
+                        },
+                        error -> {
+                            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                                "Unban Failed", "Failed to unban user: " + error.getMessage()
+                            )).queue();
+                        }
+                    );
+                });
+                
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid User", "Please provide a valid user mention or ID."
+                )).queue();
+            }
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Unban Error",
+                "Failed to process unban command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    /**
+     * Handle unmute command with prefix syntax
+     */
+    private void handleUnmuteCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            if (!event.isFromGuild()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Guild Only", "This command can only be used in servers."
+                )).queue();
+                return;
+            }
+
+            // Check permissions
+            Member member = event.getMember();
+            if (!PermissionManager.hasPermission(member, "moderation.unmute")) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Permissions", "You don't have permission to use the unmute command!"
+                )).queue();
+                return;
+            }
+
+            String userArg = options.get("user");
+            if (userArg == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Missing Arguments", "Please specify a user to unmute."
+                )).queue();
+                return;
+            }
+
+            // Parse user mention
+            User targetUser = parseUserMention(event, userArg);
+            if (targetUser == null) return;
+
+            Guild guild = event.getGuild();
+            Member targetMember = guild.getMember(targetUser);
+            
+            if (targetMember == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Member Not Found", "This user is not a member of this server."
+                )).queue();
+                return;
+            }
+
+            // Get mute role
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guild.getId());
+            String muteRoleId = (String) guildSettings.get("muteRoleId");
+            
+            if (muteRoleId == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "No Mute Role", "No mute role has been configured for this server."
+                )).queue();
+                return;
+            }
+
+            Role muteRole = guild.getRoleById(muteRoleId);
+            if (muteRole == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Mute Role Not Found", "The configured mute role no longer exists."
+                )).queue();
+                return;
+            }
+
+            // Check if user is actually muted
+            if (!targetMember.getRoles().contains(muteRole)) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Not Muted", "This user is not currently muted."
+                )).queue();
+                return;
+            }
+
+            // Remove mute role
+            guild.removeRoleFromMember(targetMember, muteRole).queue(
+                success -> {
+                    // Log the action
+                    AutoLogUtils.logUnmute(guild, targetUser, event.getAuthor(), "Unmuted via prefix command");
+
+                    // Remove from storage
+                    String guildId = guild.getId();
+                    String userId = targetUser.getId();
+                    ServerBot.getStorageManager().removeTempPunishment("mute_" + guildId + "_" + userId);
+
+                    // Send success message
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                        "User Unmuted", 
+                        String.format("Successfully unmuted **%s**", targetUser.getName())
+                    )).queue();
+                },
+                error -> {
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                        "Unmute Failed", "Failed to unmute user: " + error.getMessage()
+                    )).queue();
+                }
+            );
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Unmute Error",
+                "Failed to process unmute command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    /**
+     * Handle unwarn command with prefix syntax
+     */
+    private void handleUnwarnCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            if (!event.isFromGuild()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Guild Only", "This command can only be used in servers."
+                )).queue();
+                return;
+            }
+
+            // Check permissions
+            Member member = event.getMember();
+            if (!PermissionManager.hasPermission(member, "moderation.unwarn")) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Permissions", "You don't have permission to use the unwarn command!"
+                )).queue();
+                return;
+            }
+
+            String userArg = options.get("user");
+            if (userArg == null) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Missing Arguments", "Please specify a user to remove warnings from."
+                )).queue();
+                return;
+            }
+
+            // Parse user mention
+            User targetUser = parseUserMention(event, userArg);
+            if (targetUser == null) return;
+
+            String guildId = event.getGuild().getId();
+            String userId = targetUser.getId();
+
+            // Get current warnings
+            List<Map<String, Object>> warnings = ServerBot.getStorageManager().getWarnings(guildId, userId);
+            
+            if (warnings.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "No Warnings", "This user has no warnings to remove."
+                )).queue();
+                return;
+            }
+
+            // Remove all warnings
+            ServerBot.getStorageManager().clearWarnings(guildId, userId);
+
+            // Log the action
+            AutoLogUtils.logUnwarn(event.getGuild(), targetUser, event.getAuthor(), 
+                String.format("Removed %d warning(s) via prefix command", warnings.size()), 
+                "Multiple warnings");
+
+            // Send success message
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                "Warnings Cleared", 
+                String.format("Successfully removed **%d** warning(s) from **%s**", 
+                    warnings.size(), targetUser.getName())
+            )).queue();
+            
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Unwarn Error",
+                "Failed to process unwarn command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    // ============================================
+    // Gambling/Games Commands
+    // ============================================
+
+    private void handleGambleCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String amountStr = options.get("amount");
+            
+            if (amountStr == null || amountStr.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbedWithUsage(
+                    "Missing Amount",
+                    "You need to specify an amount to gamble.",
+                    "!gamble <amount> [game]",
+                    "!gamble 100 coinflip"
+                )).queue();
+                return;
+            }
+
+            long amount;
+            try {
+                amount = Long.parseLong(amountStr);
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "Please enter a valid number."
+                )).queue();
+                return;
+            }
+
+            if (amount <= 0) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "You must bet at least 1 coin."
+                )).queue();
+                return;
+            }
+
+            if (amount > 10000) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Bet Too High", "You cannot bet more than 10,000 coins at once."
+                )).queue();
+                return;
+            }
+
+            String guildId = event.getGuild().getId();
+            String userId = event.getAuthor().getId();
+            long balance = ServerBot.getStorageManager().getBalance(guildId, userId);
+
+            if (balance < amount) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Funds",
+                    String.format("You only have %,d coins but tried to bet %,d coins.", balance, amount)
+                )).queue();
+                return;
+            }
+
+            // Simple coinflip gamble
+            boolean won = new Random().nextBoolean();
+            long newBalance;
+            String result;
+
+            if (won) {
+                newBalance = balance + amount;
+                result = String.format("🎉 **You won!**\nYou doubled your bet and earned **%,d** coins!\n**New Balance:** %,d coins", amount, newBalance);
+            } else {
+                newBalance = balance - amount;
+                result = String.format("💸 **You lost!**\nYou lost **%,d** coins.\n**New Balance:** %,d coins", amount, newBalance);
+            }
+
+            ServerBot.getStorageManager().setBalance(guildId, userId, newBalance);
+            
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createDefaultEmbed(
+                "🎰 Gamble Result", result
+            )).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Gamble Error", "Failed to process gamble command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    private void handleSlotsCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String amountStr = options.get("amount");
+            
+            if (amountStr == null || amountStr.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbedWithUsage(
+                    "Missing Amount",
+                    "You need to specify an amount to bet.",
+                    "!slots <amount>",
+                    "!slots 100"
+                )).queue();
+                return;
+            }
+
+            long amount;
+            try {
+                amount = Long.parseLong(amountStr);
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "Please enter a valid number."
+                )).queue();
+                return;
+            }
+
+            if (amount <= 0 || amount > 10000) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "Bet must be between 1 and 10,000 coins."
+                )).queue();
+                return;
+            }
+
+            String guildId = event.getGuild().getId();
+            String userId = event.getAuthor().getId();
+            long balance = ServerBot.getStorageManager().getBalance(guildId, userId);
+
+            if (balance < amount) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Funds",
+                    String.format("You only have %,d coins.", balance)
+                )).queue();
+                return;
+            }
+
+            // Slot symbols
+            String[] symbols = {"🍒", "🍋", "🍊", "🍇", "💎", "7️⃣"};
+            Random random = new Random();
+            
+            String s1 = symbols[random.nextInt(symbols.length)];
+            String s2 = symbols[random.nextInt(symbols.length)];
+            String s3 = symbols[random.nextInt(symbols.length)];
+
+            long winnings = 0;
+            String resultMsg;
+
+            if (s1.equals(s2) && s2.equals(s3)) {
+                // Jackpot - all three match (multiplier is total return, net = multiplier - 1)
+                int multiplier = s1.equals("7️⃣") ? 9 : (s1.equals("💎") ? 4 : 2);
+                winnings = amount * multiplier;
+                resultMsg = "🎉 **JACKPOT!** All three match!";
+            } else if (s1.equals(s2) || s2.equals(s3) || s1.equals(s3)) {
+                // Two match - break even (return bet, no net change)
+                winnings = 0;
+                resultMsg = "✨ **Two match!** You got your bet back!";
+            } else {
+                // No match
+                winnings = -amount;
+                resultMsg = "💸 **No match.** Better luck next time!";
+            }
+
+            long newBalance = balance + winnings;
+            ServerBot.getStorageManager().setBalance(guildId, userId, newBalance);
+
+            String slotsDisplay = String.format("╔═══════════╗\n║ %s │ %s │ %s ║\n╚═══════════╝", s1, s2, s3);
+            
+            event.getChannel().sendMessageEmbeds(new EmbedBuilder()
+                .setTitle("🎰 Slots")
+                .setDescription(slotsDisplay + "\n\n" + resultMsg)
+                .addField("Result", winnings >= 0 ? 
+                    String.format("+%,d coins", winnings) : 
+                    String.format("%,d coins", winnings), true)
+                .addField("New Balance", String.format("%,d coins", newBalance), true)
+                .setColor(winnings > 0 ? EmbedUtils.SUCCESS_COLOR : (winnings < 0 ? EmbedUtils.ERROR_COLOR : EmbedUtils.WARNING_COLOR))
+                .build()
+            ).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Slots Error", "Failed to process slots command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    private void handleFlipCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String amountStr = options.get("amount");
+            String choice = options.getOrDefault("choice", "heads").toLowerCase();
+            
+            if (amountStr == null || amountStr.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbedWithUsage(
+                    "Missing Amount",
+                    "You need to specify an amount to bet.",
+                    "!flip <amount> [heads/tails]",
+                    "!flip 100 heads"
+                )).queue();
+                return;
+            }
+
+            long amount;
+            try {
+                amount = Long.parseLong(amountStr);
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "Please enter a valid number."
+                )).queue();
+                return;
+            }
+
+            if (amount <= 0 || amount > 10000) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "Bet must be between 1 and 10,000 coins."
+                )).queue();
+                return;
+            }
+
+            String guildId = event.getGuild().getId();
+            String userId = event.getAuthor().getId();
+            long balance = ServerBot.getStorageManager().getBalance(guildId, userId);
+
+            if (balance < amount) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Funds",
+                    String.format("You only have %,d coins.", balance)
+                )).queue();
+                return;
+            }
+
+            // Normalize choice
+            if (choice.startsWith("h")) choice = "heads";
+            else if (choice.startsWith("t")) choice = "tails";
+            else choice = "heads";
+
+            boolean isHeads = new Random().nextBoolean();
+            String result = isHeads ? "heads" : "tails";
+            boolean won = choice.equals(result);
+
+            long newBalance = won ? balance + amount : balance - amount;
+            ServerBot.getStorageManager().setBalance(guildId, userId, newBalance);
+
+            String emoji = isHeads ? "🪙" : "🔵";
+            String outcomeMsg = won ? 
+                String.format("🎉 **You won!** +%,d coins", amount) :
+                String.format("💸 **You lost!** -%,d coins", amount);
+
+            event.getChannel().sendMessageEmbeds(new EmbedBuilder()
+                .setTitle(emoji + " Coin Flip")
+                .setDescription(String.format("The coin landed on **%s**!\n\nYou chose **%s**.\n\n%s", result, choice, outcomeMsg))
+                .addField("New Balance", String.format("%,d coins", newBalance), true)
+                .setColor(won ? EmbedUtils.SUCCESS_COLOR : EmbedUtils.ERROR_COLOR)
+                .build()
+            ).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Flip Error", "Failed to process flip command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    private void handleDiceCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String amountStr = options.get("amount");
+            String guessStr = options.get("guess");
+            
+            if (amountStr == null || amountStr.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbedWithUsage(
+                    "Missing Amount",
+                    "You need to specify an amount to bet and a number to guess.",
+                    "!dice <amount> <guess 1-6>",
+                    "!dice 100 4"
+                )).queue();
+                return;
+            }
+
+            long amount;
+            int guess;
+            try {
+                amount = Long.parseLong(amountStr);
+                guess = guessStr != null ? Integer.parseInt(guessStr) : -1;
+            } catch (NumberFormatException e) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Input", "Please enter valid numbers."
+                )).queue();
+                return;
+            }
+
+            if (guess < 1 || guess > 6) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Guess", "Please guess a number between 1 and 6."
+                )).queue();
+                return;
+            }
+
+            if (amount <= 0 || amount > 10000) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Amount", "Bet must be between 1 and 10,000 coins."
+                )).queue();
+                return;
+            }
+
+            String guildId = event.getGuild().getId();
+            String userId = event.getAuthor().getId();
+            long balance = ServerBot.getStorageManager().getBalance(guildId, userId);
+
+            if (balance < amount) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Insufficient Funds",
+                    String.format("You only have %,d coins.", balance)
+                )).queue();
+                return;
+            }
+
+            int roll = new Random().nextInt(6) + 1;
+            boolean won = roll == guess;
+            long winnings = won ? amount * 4 : -amount; // 5x return - 1x bet = 4x net profit
+            long newBalance = balance + winnings;
+
+            ServerBot.getStorageManager().setBalance(guildId, userId, newBalance);
+
+            String[] diceEmoji = {"⚀", "⚁", "⚂", "⚃", "⚄", "⚅"};
+            String outcomeMsg = won ?
+                String.format("🎉 **You won!** +%,d coins (5x payout!)", amount * 4) :
+                String.format("💸 **You lost!** -%,d coins", amount);
+
+            event.getChannel().sendMessageEmbeds(new EmbedBuilder()
+                .setTitle("🎲 Dice Roll")
+                .setDescription(String.format("You guessed **%d**\n\n%s The dice rolled **%d**!\n\n%s", 
+                    guess, diceEmoji[roll - 1], roll, outcomeMsg))
+                .addField("New Balance", String.format("%,d coins", newBalance), true)
+                .setColor(won ? EmbedUtils.SUCCESS_COLOR : EmbedUtils.ERROR_COLOR)
+                .build()
+            ).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Dice Error", "Failed to process dice command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    // ============================================
+    // Utility Commands
+    // ============================================
+
+    private void handlePurgeCommand(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            // Check permissions
+            Member member = event.getMember();
+            if (member == null || !PermissionManager.hasPermission(member, "moderation.purge")) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Permission Denied", "You don't have permission to use this command.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            String amountStr = options.get("amount");
+            if (amountStr == null || amountStr.isEmpty()) {
+                DismissibleMessage.send(event.getChannel(),
+                    EmbedUtils.createErrorEmbedWithUsage(
+                        "Missing Amount",
+                        "You need to specify how many messages to delete.",
+                        "!purge <amount> [@user]",
+                        "!purge 50"
+                    ),
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            int amount;
+            try {
+                amount = Integer.parseInt(amountStr);
+            } catch (NumberFormatException e) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Invalid Amount", "Please enter a valid number.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            if (amount < 1 || amount > 100) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Invalid Amount", "Amount must be between 1 and 100.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            // Delete the command message first
+            event.getMessage().delete().queue();
+
+            // Get and delete messages
+            event.getChannel().getHistory().retrievePast(amount).queue(messages -> {
+                if (messages.isEmpty()) {
+                    event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                        "No Messages", "No messages found to delete."
+                    )).queue(msg -> msg.delete().queueAfter(5, TimeUnit.SECONDS));
+                    return;
+                }
+
+                // Filter by user if specified
+                String userArg = options.get("user");
+                if (userArg != null && !userArg.isEmpty()) {
+                    User targetUser = parseUserMention(event, userArg);
+                    if (targetUser != null) {
+                        messages.removeIf(msg -> !msg.getAuthor().getId().equals(targetUser.getId()));
+                    }
+                }
+
+                if (messages.size() == 1) {
+                    messages.get(0).delete().queue();
+                } else {
+                    event.getGuildChannel().asTextChannel().deleteMessages(messages).queue();
+                }
+
+                DismissibleMessage.sendSuccess(event.getChannel(),
+                    "Messages Purged",
+                    String.format("Successfully deleted **%d** message(s).", messages.size()),
+                    event.getAuthor().getId()
+                );
+            });
+
+        } catch (Exception e) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Purge Error", "Failed to process purge command: " + e.getMessage(),
+                event.getAuthor().getId()
+            );
+        }
+    }
+
+    /**
+     * Handle proxy commands with px; prefix
+     */
+    private void handleProxyCommand(MessageReceivedEvent event, String commandContent) {
+        try {
+            if (!event.isFromGuild()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Guild Only", "Proxy commands can only be used in servers."
+                )).queue();
+                return;
+            }
+
+            String guildId = event.getGuild().getId();
+            String userId = event.getAuthor().getId();
+            
+            // Parse command and arguments
+            String[] parts = commandContent.trim().split("\\s+", 2);
+            String command = parts[0].toLowerCase();
+            String args = parts.length > 1 ? parts[1] : "";
+
+            switch (command) {
+                case "ap", "autoproxy" -> handleAutoproxyCommand(event, args, guildId, userId);
+                case "new", "add", "create" -> handleProxyNewCommand(event, args, guildId, userId);
+                case "member", "m" -> handleProxyMemberCommand(event, args, guildId, userId);
+                case "system", "sys", "s" -> handleProxySystemCommand(event, guildId, userId);
+                case "list", "ls" -> handleProxyListCommand(event, guildId, userId);
+                case "switch", "sw" -> handleProxySwitchCommand(event, args, guildId, userId);
+                case "help", "h" -> handleProxyHelpCommand(event);
+                default -> event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Unknown Command",
+                    "Unknown proxy command: `" + command + "`\n" +
+                    "Use `px;help` for a list of available commands."
+                )).queue();
+            }
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Proxy Error",
+                "Failed to process proxy command: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    private void handleAutoproxyCommand(MessageReceivedEvent event, String args, String guildId, String userId) {
+        ProxyService proxyService = ServerBot.getProxyService();
+        
+        if (args.isEmpty()) {
+            // Show current status
+            ProxySettings settings = proxyService.getSettings(userId, guildId);
+            String mode = settings.getAutoproxyMode().toString();
+            boolean enabled = !settings.getAutoproxyMode().equals(ProxySettings.AutoproxyMode.OFF);
+            
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "Autoproxy Status",
+                String.format("**Current Mode:** %s\n**Status:** %s",
+                    mode, enabled ? CustomEmojis.ON + " Enabled" : CustomEmojis.OFF + " Disabled")
+            )).queue();
+            return;
+        }
+
+        // Parse the mode
+        String mode = args.toLowerCase();
+        ProxySettings.AutoproxyMode newMode;
+
+        switch (mode) {
+            case "off", "false", "disable", "disabled" -> newMode = ProxySettings.AutoproxyMode.OFF;
+            case "on", "true", "enable", "enabled", "member" -> newMode = ProxySettings.AutoproxyMode.MEMBER;
+            case "latch" -> newMode = ProxySettings.AutoproxyMode.LATCH;
+            case "front" -> newMode = ProxySettings.AutoproxyMode.FRONT;
+            case "sticky" -> newMode = ProxySettings.AutoproxyMode.STICKY;
+            default -> {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Invalid Mode",
+                    "Valid autoproxy modes: `off`, `member`, `latch`, `front`, `sticky`"
+                )).queue();
+                return;
+            }
+        }
+
+        ProxySettings settings = proxyService.getSettings(userId, guildId);
+        settings.setAutoproxyMode(newMode);
+        
+        proxyService.updateSettings(userId, guildId, settings).thenAccept(result -> {
+            if (result.startsWith("7")) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Autoproxy Error [" + result + "]",
+                    "Failed to update autoproxy settings.\nUse `/error " + result + "` for more info."
+                )).queue();
+            } else {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                    "Autoproxy Updated",
+                    String.format("Autoproxy mode set to: **%s**", newMode)
+                )).queue();
+            }
+        });
+    }
+
+    private void handleProxyNewCommand(MessageReceivedEvent event, String args, String guildId, String userId) {
+        if (args.isEmpty()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Name",
+                "Please provide a name for the proxy member.\nExample: `px;new John`"
+            )).queue();
+            return;
+        }
+
+        ProxyService proxyService = ServerBot.getProxyService();
+        proxyService.createMember(userId, guildId, args, null, null, null, null).thenAccept(result -> {
+            if (result.startsWith("7")) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Creation Failed [" + result + "]",
+                    "Failed to create proxy member.\nUse `/error " + result + "` for more info."
+                )).queue();
+            } else {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                    "Proxy Member Created",
+                    String.format("Created proxy member: **%s**\nID: `%s`\n\n" +
+                        "Set up tags with: `/proxy member %s tags:prefix suffix:suffix`",
+                        args, result, args)
+                )).queue();
+            }
+        });
+    }
+
+    private void handleProxyMemberCommand(MessageReceivedEvent event, String args, String guildId, String userId) {
+        if (args.isEmpty()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Name",
+                "Please provide the proxy member name.\nExample: `px;member John`"
+            )).queue();
+            return;
+        }
+
+        ProxyService proxyService = ServerBot.getProxyService();
+        com.serverbot.models.ProxyMember member = proxyService.getMemberByName(userId, guildId, args);
+
+        if (member == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Member Not Found",
+                "Could not find proxy member: **" + args + "**"
+            )).queue();
+        } else {
+            StringBuilder info = new StringBuilder();
+            info.append("**Member Information**\n\n");
+            info.append("**Name:** ").append(member.getName()).append("\n");
+            info.append("**Display Name:** ").append(member.getDisplayName()).append("\n");
+            if (member.getPronouns() != null) {
+                info.append("**Pronouns:** ").append(member.getPronouns()).append("\n");
+            }
+            if (member.getDescription() != null) {
+                info.append("**Description:** ").append(member.getDescription()).append("\n");
+            }
+            info.append("**ID:** `").append(member.getMemberId()).append("`\n");
+            
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "Proxy Member", info.toString()
+            )).queue();
+        }
+    }
+
+    private void handleProxySystemCommand(MessageReceivedEvent event, String guildId, String userId) {
+        ProxyService proxyService = ServerBot.getProxyService();
+        ProxySettings settings = proxyService.getSettings(userId, guildId);
+        
+        StringBuilder info = new StringBuilder();
+        info.append("**System Information**\n\n");
+        info.append("**User:** ").append(event.getAuthor().getAsMention()).append("\n");
+        info.append("**Autoproxy Mode:** ").append(settings.getAutoproxyMode()).append("\n");
+        
+        if (settings.getAutoproxyMemberId() != null) {
+            com.serverbot.models.ProxyMember member = proxyService.getMember(settings.getAutoproxyMemberId());
+            if (member != null) {
+                info.append("**Autoproxy Member:** ").append(member.getName()).append("\n");
+            }
+        }
+        
+        info.append("\n**Commands:**\n");
+        info.append("`px;list` - View all proxy members\n");
+        info.append("`px;ap [mode]` - Set autoproxy mode\n");
+        info.append("`px;new [name]` - Create new member\n");
+        info.append("`px;help` - Show all commands\n");
+
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+            "Proxy System", info.toString()
+        )).queue();
+    }
+
+    private void handleProxyListCommand(MessageReceivedEvent event, String guildId, String userId) {
+        ProxyService proxyService = ServerBot.getProxyService();
+        List<com.serverbot.models.ProxyMember> members = proxyService.getUserMembers(userId, guildId);
+
+        if (members.isEmpty()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "No Members",
+                "You don't have any proxy members yet.\nCreate one with: `px;new [name]`"
+            )).queue();
+        } else {
+            StringBuilder list = new StringBuilder();
+            list.append("**Your Proxy Members**\n\n");
+            
+            for (com.serverbot.models.ProxyMember member : members) {
+                list.append("• **").append(member.getName()).append("**");
+                if (member.getGuildId() == null) {
+                    list.append(" *(global)*");
+                }
+                list.append(" - `").append(member.getMemberId()).append("`\n");
+            }
+            
+            list.append("\nUse `px;member [name]` to view details.");
+            
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "Proxy Members", list.toString()
+            )).queue();
+        }
+    }
+
+    private void handleProxySwitchCommand(MessageReceivedEvent event, String args, String guildId, String userId) {
+        if (args.isEmpty()) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Missing Name",
+                "Please provide the proxy member name to switch to.\nExample: `px;switch John`"
+            )).queue();
+            return;
+        }
+
+        ProxyService proxyService = ServerBot.getProxyService();
+        com.serverbot.models.ProxyMember member = proxyService.getMemberByName(userId, guildId, args);
+        
+        if (member == null) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Member Not Found",
+                "Could not find proxy member: **" + args + "**"
+            )).queue();
+            return;
+        }
+
+        proxyService.switchMember(userId, guildId, member.getMemberId()).thenAccept(result -> {
+            if (result.startsWith("7")) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                    "Switch Failed [" + result + "]",
+                    "Failed to switch to member: **" + args + "**\nUse `/error " + result + "` for more info."
+                )).queue();
+            } else {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createSuccessEmbed(
+                    "Switched Member",
+                    String.format("Now proxying as: **%s**", args)
+                )).queue();
+            }
+        });
+    }
+
+    private void handleProxyHelpCommand(MessageReceivedEvent event) {
+        StringBuilder help = new StringBuilder();
+        help.append("**Proxy Commands (prefix: `px;`)**\n\n");
+        help.append("**Basic Commands:**\n");
+        help.append("`px;new [name]` - Create a new proxy member\n");
+        help.append("`px;member [name]` - View member info\n");
+        help.append("`px;list` - List all your proxy members\n");
+        help.append("`px;switch [name]` - Switch to a proxy member\n");
+        help.append("`px;system` - View your system info\n\n");
+        help.append("**Autoproxy:**\n");
+        help.append("`px;ap [mode]` - Set autoproxy mode\n");
+        help.append("`px;autoproxy [mode]` - Same as above\n\n");
+        help.append("**Modes:** `off`, `member`, `latch`, `front`, `sticky`\n\n");
+        help.append("**Advanced:**\n");
+        help.append("Use slash commands `/proxy` for full functionality including:\n");
+        help.append("• Setting tags (prefix/suffix)\n");
+        help.append("• Managing groups\n");
+        help.append("• Configuring display names and avatars\n");
+
+        event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+            "Proxy Help", help.toString()
+        )).queue();
+    }
+
+    // ========== AUTOMOD COMMAND ==========
+    private void handleAutomodCommand(MessageReceivedEvent event, Map<String, String> options) {
+        Member executor = event.getMember();
+        if (executor == null) return;
+
+        // Check permissions
+        if (!PermissionManager.hasPermission(executor, "admin.automod")) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Insufficient Permissions",
+                "You need administrator permissions to configure automod.",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        String action = options.get("action");
+        String feature = options.get("feature");
+
+        if (action == null) {
+            // Show usage
+            DismissibleMessage.sendInfo(event.getChannel(),
+                "Automod Usage",
+                "**Usage:** `!automod <action> <feature> [threshold]`\n\n" +
+                "**Actions:**\n" +
+                "• `enable` - Enable an automod feature\n" +
+                "• `disable` - Disable an automod feature\n" +
+                "• `view` - View current settings for a feature\n\n" +
+                "**Features:**\n" +
+                "• `anti_spam` - Prevent message spam\n" +
+                "• `bad_words` - Filter inappropriate words\n" +
+                "• `caps_lock` - Limit excessive caps\n" +
+                "• `repeated_text` - Prevent repeated messages\n" +
+                "• `mass_mentions` - Limit mass pinging\n" +
+                "• `link_filter` - Filter unwanted links\n\n" +
+                "**Example:** `!automod enable anti_spam 5`",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        if (feature == null) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Missing Feature",
+                "Please specify which feature to configure.\n" +
+                "**Available:** `anti_spam`, `bad_words`, `caps_lock`, `repeated_text`, `mass_mentions`, `link_filter`",
+                event.getAuthor().getId()
+            );
+            return;
+        }
+
+        try {
+            String guildId = event.getGuild().getId();
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guildId);
+
+            switch (action.toLowerCase()) {
+                case "enable" -> {
+                    ServerBot.getStorageManager().updateGuildSettings(guildId, "automod_" + feature + "_enabled", true);
+                    String thresholdStr = options.get("threshold");
+                    if (thresholdStr != null) {
+                        try {
+                            int threshold = Integer.parseInt(thresholdStr);
+                            ServerBot.getStorageManager().updateGuildSettings(guildId, "automod_" + feature + "_threshold", threshold);
+                        } catch (NumberFormatException ignored) {}
+                    }
+
+                    DismissibleMessage.sendSuccess(event.getChannel(),
+                        "Automod Feature Enabled",
+                        "**Feature:** " + feature.toUpperCase().replace("_", " ") + "\n" +
+                        "**Status:** Enabled\n" +
+                        "**Configured by:** " + executor.getAsMention(),
+                        event.getAuthor().getId()
+                    );
+                }
+                case "disable" -> {
+                    ServerBot.getStorageManager().updateGuildSettings(guildId, "automod_" + feature + "_enabled", false);
+
+                    DismissibleMessage.sendSuccess(event.getChannel(),
+                        "Automod Feature Disabled",
+                        "**Feature:** " + feature.toUpperCase().replace("_", " ") + "\n" +
+                        "**Status:** Disabled\n" +
+                        "**Configured by:** " + executor.getAsMention(),
+                        event.getAuthor().getId()
+                    );
+                }
+                case "view" -> {
+                    boolean enabled = guildSettings.getOrDefault("automod_" + feature + "_enabled", false).equals(true);
+                    Object threshold = guildSettings.get("automod_" + feature + "_threshold");
+
+                    String description = "**Feature:** " + feature.toUpperCase().replace("_", " ") + "\n" +
+                        "**Status:** " + (enabled ? CustomEmojis.ON + " Enabled" : CustomEmojis.OFF + " Disabled");
+
+                    if (threshold != null) {
+                        description += "\n**Threshold:** " + threshold;
+                    }
+
+                    DismissibleMessage.sendInfo(event.getChannel(),
+                        "Automod Configuration",
+                        description,
+                        event.getAuthor().getId()
+                    );
+                }
+                default -> {
+                    DismissibleMessage.sendError(event.getChannel(),
+                        "Invalid Action",
+                        "Valid actions are: `enable`, `disable`, `view`",
+                        event.getAuthor().getId()
+                    );
+                }
+            }
+        } catch (Exception e) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Automod Config Failed",
+                "Failed to configure automod: " + e.getMessage(),
+                event.getAuthor().getId()
+            );
+        }
+    }
+
+    // ========== SERVERSTATS COMMAND ==========
+    private void handleServerstatsCommand(MessageReceivedEvent event) {
+        Guild guild = event.getGuild();
+        if (guild == null) return;
+
+        try {
+            String guildId = guild.getId();
+            Map<String, Object> guildSettings = ServerBot.getStorageManager().getGuildSettings(guildId);
+
+            // Calculate member statistics
+            java.util.List<Member> members = guild.getMembers();
+            int totalMembers = members.size();
+            int humanMembers = (int) members.stream().filter(m -> !m.getUser().isBot()).count();
+            int botMembers = totalMembers - humanMembers;
+
+            // Calculate online status
+            int onlineMembers = (int) members.stream().filter(m -> m.getOnlineStatus() == net.dv8tion.jda.api.OnlineStatus.ONLINE).count();
+            int idleMembers = (int) members.stream().filter(m -> m.getOnlineStatus() == net.dv8tion.jda.api.OnlineStatus.IDLE).count();
+            int dndMembers = (int) members.stream().filter(m -> m.getOnlineStatus() == net.dv8tion.jda.api.OnlineStatus.DO_NOT_DISTURB).count();
+            int offlineMembers = totalMembers - onlineMembers - idleMembers - dndMembers;
+
+            // Bot configuration status
+            Boolean economyEnabled = (Boolean) guildSettings.get("enableEconomy");
+            Boolean levelingEnabled = (Boolean) guildSettings.get("enableLeveling");
+            Boolean automodEnabled = (Boolean) guildSettings.get("enableAutomod");
+            Boolean welcomeEnabled = (Boolean) guildSettings.get("welcomeEnabled");
+
+            net.dv8tion.jda.api.EmbedBuilder embed = EmbedUtils.createEmbedBuilder(EmbedUtils.SUCCESS_COLOR)
+                    .setTitle(CustomEmojis.INFO + " Server Statistics")
+                    .setDescription("Comprehensive statistics for **" + guild.getName() + "**")
+                    .setThumbnail(guild.getIconUrl());
+
+            // Server information
+            embed.addField(CustomEmojis.INFO + " Server Information",
+                          "**Name:** " + guild.getName() + "\n" +
+                          "**Owner:** " + guild.getOwner().getAsMention() + "\n" +
+                          "**Created:** " + guild.getTimeCreated().format(java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy")) + "\n" +
+                          "**Verification:** " + guild.getVerificationLevel() + "\n" +
+                          "**Boost Level:** " + guild.getBoostTier() + " (" + guild.getBoostCount() + " boosts)",
+                          false);
+
+            // Member statistics
+            embed.addField(CustomEmojis.INFO + " Members (" + totalMembers + ")",
+                          "**Humans:** " + humanMembers + "\n" +
+                          "**Bots:** " + botMembers + "\n" +
+                          CustomEmojis.ONLINE + " **Online:** " + onlineMembers + "\n" +
+                          CustomEmojis.IDLE + " **Idle:** " + idleMembers + "\n" +
+                          CustomEmojis.DND + " **DND:** " + dndMembers + "\n" +
+                          CustomEmojis.OFFLINE + " **Offline:** " + offlineMembers,
+                          true);
+
+            // Channel statistics
+            int textChannels = guild.getTextChannels().size();
+            int voiceChannels = guild.getVoiceChannels().size();
+            int categories = guild.getCategories().size();
+            int totalChannels = textChannels + voiceChannels;
+
+            embed.addField(CustomEmojis.INFO + " Channels (" + totalChannels + ")",
+                          "**Text:** " + textChannels + "\n" +
+                          "**Voice:** " + voiceChannels + "\n" +
+                          "**Categories:** " + categories,
+                          true);
+
+            // Role statistics
+            int totalRoles = guild.getRoles().size();
+            embed.addField(CustomEmojis.INFO + " Roles",
+                          "**Total Roles:** " + totalRoles,
+                          true);
+
+            // Bot feature status
+            embed.addField(CustomEmojis.INFO + " Bot Features",
+                          (economyEnabled != null && economyEnabled ? CustomEmojis.ON : CustomEmojis.OFF) + " **Economy**\n" +
+                          (levelingEnabled != null && levelingEnabled ? CustomEmojis.ON : CustomEmojis.OFF) + " **Leveling**\n" +
+                          (automodEnabled != null && automodEnabled ? CustomEmojis.ON : CustomEmojis.OFF) + " **Automod**\n" +
+                          (welcomeEnabled != null && welcomeEnabled ? CustomEmojis.ON : CustomEmojis.OFF) + " **Welcome**",
+                          true);
+
+            event.getChannel().sendMessageEmbeds(embed.build()).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Error",
+                "Failed to retrieve server statistics: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    // ========== RULES COMMAND ==========
+    @SuppressWarnings("unchecked")
+    private void handleRulesCommand(MessageReceivedEvent event, Map<String, String> options) {
+        Member member = event.getMember();
+        if (member == null) return;
+
+        String action = options.getOrDefault("action", "display");
+
+        // Check permissions based on action
+        if (!hasRulesPermission(member, action)) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Insufficient Permissions",
+                "You don't have permission to perform this action.\n" +
+                "Required permission: `rules." + (action.equals("display") ? "use" : action) + "` or `rules.*`"
+            )).queue();
+            return;
+        }
+
+        switch (action.toLowerCase()) {
+            case "display", "show", "view" -> handleRulesDisplay(event);
+            case "list" -> handleRulesList(event);
+            default -> {
+                // For create/edit/delete, tell them to use slash command
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                    "Rules Management",
+                    "For rule management (create/edit/delete), please use the slash command:\n" +
+                    "`/rules action:" + action + "`\n\n" +
+                    "**Available prefix commands:**\n" +
+                    "• `!rules` or `!rules display` - Show server rules\n" +
+                    "• `!rules list` - List all rules"
+                )).queue();
+            }
+        }
+    }
+
+    private boolean hasRulesPermission(Member member, String action) {
+        if (PermissionManager.hasPermission(member, "rules.*")) {
+            return true;
+        }
+
+        return switch (action.toLowerCase()) {
+            case "display", "show", "view" -> PermissionManager.hasPermission(member, "rules.use");
+            case "list" -> PermissionManager.hasPermission(member, "rules.use") ||
+                          PermissionManager.hasPermission(member, "rules.create") ||
+                          PermissionManager.hasPermission(member, "rules.edit") ||
+                          PermissionManager.hasPermission(member, "rules.delete");
+            default -> false;
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleRulesDisplay(MessageReceivedEvent event) {
+        try {
+            String guildId = event.getGuild().getId();
+            Map<String, Object> settings = ServerBot.getStorageManager().getGuildSettings(guildId);
+
+            java.util.List<Map<String, Object>> rules = (java.util.List<Map<String, Object>>) settings.get("serverRules");
+
+            if (rules == null || rules.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                    "📋 Server Rules",
+                    "No rules have been set up for this server yet.\n" +
+                    "Administrators can add rules using `/rules action:create`."
+                )).queue();
+                return;
+            }
+
+            StringBuilder rulesText = new StringBuilder();
+            for (int i = 0; i < rules.size(); i++) {
+                Map<String, Object> rule = rules.get(i);
+                String title = (String) rule.get("title");
+                String description = (String) rule.get("description");
+
+                rulesText.append("**").append(i + 1).append(". ").append(title).append("**\n");
+                if (description != null && !description.isEmpty()) {
+                    rulesText.append(description).append("\n");
+                }
+                rulesText.append("\n");
+            }
+
+            net.dv8tion.jda.api.EmbedBuilder embed = new net.dv8tion.jda.api.EmbedBuilder()
+                    .setTitle("📋 " + event.getGuild().getName() + " Rules")
+                    .setColor(0x3498DB)
+                    .setDescription(rulesText.toString())
+                    .setFooter("Please follow these rules to keep the server safe!")
+                    .setThumbnail(event.getGuild().getIconUrl());
+
+            event.getChannel().sendMessageEmbeds(embed.build()).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Error",
+                "Failed to retrieve rules: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleRulesList(MessageReceivedEvent event) {
+        try {
+            String guildId = event.getGuild().getId();
+            Map<String, Object> settings = ServerBot.getStorageManager().getGuildSettings(guildId);
+
+            java.util.List<Map<String, Object>> rules = (java.util.List<Map<String, Object>>) settings.get("serverRules");
+
+            if (rules == null || rules.isEmpty()) {
+                event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                    "Rules List",
+                    "No rules have been set up for this server."
+                )).queue();
+                return;
+            }
+
+            StringBuilder listText = new StringBuilder();
+            for (int i = 0; i < rules.size(); i++) {
+                Map<String, Object> rule = rules.get(i);
+                String title = (String) rule.get("title");
+                listText.append("`").append(i + 1).append("` ").append(title).append("\n");
+            }
+
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createInfoEmbed(
+                "Rules List (" + rules.size() + " rules)",
+                listText.toString()
+            )).queue();
+
+        } catch (Exception e) {
+            event.getChannel().sendMessageEmbeds(EmbedUtils.createErrorEmbed(
+                "Error",
+                "Failed to retrieve rules list: " + e.getMessage()
+            )).queue();
+        }
+    }
+
+    // ========== TICKET COMMAND ==========
+    private void handleTicketCommand(MessageReceivedEvent event, Map<String, String> options) {
+        Member member = event.getMember();
+        if (member == null) return;
+
+        String action = options.getOrDefault("action", "create");
+
+        switch (action.toLowerCase()) {
+            case "create", "new", "open" -> handleTicketCreate(event, options);
+            case "close" -> handleTicketClose(event, options);
+            default -> {
+                // For other ticket actions, refer to slash command
+                DismissibleMessage.sendInfo(event.getChannel(),
+                    "Ticket Commands",
+                    "**Prefix commands available:**\n" +
+                    "• `!ticket` or `!ticket create` - Create a new ticket\n" +
+                    "• `!ticket close [reason]` - Close current ticket\n\n" +
+                    "**For advanced ticket management, use slash commands:**\n" +
+                    "• `/ticket create` - Create ticket with options\n" +
+                    "• `/ticket add <user>` - Add user to ticket\n" +
+                    "• `/ticket remove <user>` - Remove user from ticket\n" +
+                    "• `/ticket category-create` - Create ticket category\n" +
+                    "• `/ticket settings` - Configure ticket system",
+                    event.getAuthor().getId()
+                );
+            }
+        }
+    }
+
+    private void handleTicketCreate(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String reason = options.getOrDefault("reason", "Ticket created via prefix command");
+
+            TicketService ticketService = ServerBot.getTicketService();
+            if (ticketService == null) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Error",
+                    "Ticket system is not available.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            ticketService.createTicket(event.getGuild(), event.getAuthor(), reason)
+                .thenAccept(result -> {
+                    if (result.startsWith("T")) {
+                        // Error code
+                        DismissibleMessage.sendError(event.getChannel(),
+                            "Error " + result,
+                            "Failed to create ticket.\nUse `/error category:8` for full 8XX-series documentation.",
+                            event.getAuthor().getId()
+                        );
+                    } else {
+                        // Success - ticket ID returned
+                        DismissibleMessage.sendSuccess(event.getChannel(),
+                            "Ticket Created",
+                            "Your ticket #" + result + " has been created successfully!",
+                            event.getAuthor().getId()
+                        );
+                    }
+                });
+
+        } catch (Exception e) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Error",
+                "Failed to create ticket: " + e.getMessage(),
+                event.getAuthor().getId()
+            );
+        }
+    }
+
+    private void handleTicketClose(MessageReceivedEvent event, Map<String, String> options) {
+        try {
+            String reason = options.getOrDefault("reason", "Closed via prefix command");
+
+            TicketService ticketService = ServerBot.getTicketService();
+            if (ticketService == null) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Error",
+                    "Ticket system is not available.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            // Check if current channel is a ticket
+            String channelId = event.getChannel().getId();
+            TicketService.TicketData ticket = ticketService.getTicketByChannel(channelId);
+
+            if (ticket == null) {
+                DismissibleMessage.sendError(event.getChannel(),
+                    "Not a Ticket",
+                    "This channel is not a ticket channel.\n" +
+                    "Use this command inside a ticket to close it.",
+                    event.getAuthor().getId()
+                );
+                return;
+            }
+
+            ticketService.closeTicket(event.getGuild(), ticket.getTicketId(), event.getAuthor(), reason)
+                .thenAccept(result -> {
+                    if (result.startsWith("T")) {
+                        DismissibleMessage.sendError(event.getChannel(),
+                            "Error " + result,
+                            "Failed to close ticket.\nUse `/error category:8` for full 8XX-series documentation.",
+                            event.getAuthor().getId()
+                        );
+                    }
+                    // Success message is handled by TicketService
+                });
+
+        } catch (Exception e) {
+            DismissibleMessage.sendError(event.getChannel(),
+                "Error",
+                "Failed to close ticket: " + e.getMessage(),
+                event.getAuthor().getId()
+            );
+        }
+    }
+}

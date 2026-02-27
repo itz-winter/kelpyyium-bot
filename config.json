@@ -1,0 +1,9 @@
+{
+  "bot_token": "PASTE_YOUR_NEW_TOKEN_HERE",
+  "database_path": "data/serverbot.db",
+  "default_prefix": "/",
+  "owner_id": "YOUR_DISCORD_USER_ID_HERE",
+  "owner_ids": [],
+  "support_server_invite": "",
+  "bot_version": "1.0.0"
+}

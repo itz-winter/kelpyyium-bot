@@ -1,0 +1,7 @@
+.mvn/
+.vscode/
+target/
+dev/
+logs/
+data/
+customEmojis/
